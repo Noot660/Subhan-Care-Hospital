@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — Subhan Care HMS</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/dashboard.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%231e40af'/><text x='16' y='22' text-anchor='middle' fill='white' font-size='18'>+</text></svg>">
+</head>
+<body>
+  <div class="layout-sidebar">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <span>+</span> Subhan Care HMS
+      </div>
+      <nav class="sidebar-nav" id="sidebarNav">
+        <!-- Populated dynamically based on role -->
+      </nav>
+      <div class="sidebar-footer">
+        <span id="sidebarUser">—</span>
+        <button class="btn btn-sm btn-outline w-full mt-2" id="logoutButton">Sign Out</button>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="main-content">
+      <div class="top-bar">
+        <h2 id="dashboardTitle">Dashboard</h2>
+        <div class="user-info">
+          <span id="userNameDisplay">—</span>
+          <div class="user-avatar" id="userAvatar">?</div>
+        </div>
+      </div>
+      <div class="page-content" id="dashboardContent">
+        <!-- Populated dynamically -->
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/dashboard.js"></script>
+</body>
+</html>

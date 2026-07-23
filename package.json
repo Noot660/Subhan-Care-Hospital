@@ -1,0 +1,16 @@
+{
+  "name": "subhan-care-hms",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun --watch run src/index.ts",
+    "seed": "bun run src/db/seed.ts",
+    "build": "echo 'No build needed — Bun runs TypeScript directly'",
+    "publish": "bash ./publish.sh"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

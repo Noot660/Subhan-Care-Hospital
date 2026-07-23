@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Staff Login — Subhan Care HMS</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/login.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%231e40af'/><text x='16' y='22' text-anchor='middle' fill='white' font-size='18'>+</text></svg>">
+</head>
+<body>
+  <div class="login-page">
+    <div class="login-card">
+      <div class="login-header">
+        <div class="login-logo">+</div>
+        <h1>Subhan Care HMS</h1>
+        <p>Staff Portal — Sign in to your account</p>
+      </div>
+
+      <form id="loginForm" class="login-form">
+        <div class="form-field">
+          <label for="username">Username</label>
+          <input type="text" id="username" name="username" required
+                 placeholder="Enter your username" autocomplete="username">
+        </div>
+        <div class="form-field">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" required
+                 placeholder="Enter your password" autocomplete="current-password">
+        </div>
+
+        <div id="loginError" class="login-error hidden"></div>
+
+        <button type="submit" class="btn btn-primary btn-lg w-full" id="loginButton">
+          Sign In
+        </button>
+      </form>
+
+      <div class="login-footer">
+        <a href="/">← Back to AI Receptionist</a>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/js/login.js"></script>
+</body>
+</html>
