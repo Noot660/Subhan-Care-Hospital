@@ -28,7 +28,7 @@ export function detectCallEnd(message: string): boolean {
 
 export function getVoiceGreeting(lang: Language): string {
   if (lang === 'ur') {
-    return 'Subhan Care Hospital mein khushamdeed. Main aapki kya madad kar sakta hoon?';
+    return 'Subhan Care mein khushamdeed. Main aapka AI receptionist hoon. Bataaiye, kya madad chahiye?';
   }
   return 'Thank you for calling Subhan Care Hospital. How can I help you today?';
 }
@@ -63,27 +63,27 @@ export function getVoicePrompt(intent: string, step: string, lang: Language, var
     silence: {
       _: {
         en: "I didn't catch that. How can I help?",
-        ur: "Mujhe kuch sunai nahi diya. Main kya madad kar sakta hoon?",
+        ur: "Kuch sunai nahi diya. Kya madad chahiye?",
       },
     },
     greeting: {
       _: {
         en: "Thank you for calling Subhan Care. How can I help?",
-        ur: "Subhan Care mein khushamdeed. Main kya madad kar sakta hoon?",
+        ur: "Subhan Care mein khushamdeed. Kya madad chahiye?",
       },
     },
     register_patient: {
       ask_full_name: {
         en: "What's your full name?",
-        ur: "Aapka poora naam kya hai?",
+        ur: "Poora naam?",
       },
       ask_cnic: {
         en: "What's your CNIC number?",
-        ur: "Aapka CNIC number kya hai?",
+        ur: "CNIC number?",
       },
       ask_dob: {
         en: "What's your date of birth?",
-        ur: "Aapki date of birth kya hai?",
+        ur: "Date of birth?",
       },
       ask_gender: {
         en: "Male, female, or other?",
@@ -91,25 +91,25 @@ export function getVoicePrompt(intent: string, step: string, lang: Language, var
       },
       ask_phone: {
         en: "What's your phone number?",
-        ur: "Aapka phone number kya hai?",
+        ur: "Phone number?",
       },
       ask_address: {
         en: "What's your address?",
-        ur: "Aapka address kya hai?",
+        ur: "Address?",
       },
       ask_emergency_contact: {
         en: "Emergency contact number?",
-        ur: "Emergency contact number kya hai?",
+        ur: "Emergency contact?",
       },
     },
     book_appointment: {
       ask_is_patient: {
         en: "Are you registered with us?",
-        ur: "Kya aap hamare saath registered hain?",
+        ur: "Pehle se registered hain?",
       },
       ask_identifier: {
         en: "What's your CNIC or phone number?",
-        ur: "Apna CNIC ya phone number bataayein.",
+        ur: "CNIC ya phone number?",
       },
       ask_doctor: {
         en: "Which doctor or specialty?",
@@ -117,7 +117,7 @@ export function getVoicePrompt(intent: string, step: string, lang: Language, var
       },
       ask_date: {
         en: "Which date? Say year-month-day.",
-        ur: "Kaunsi date? Format mein boliye.",
+        ur: "Kaunsi date?",
       },
       ask_time: {
         en: "Which time works for you?",
@@ -127,17 +127,17 @@ export function getVoicePrompt(intent: string, step: string, lang: Language, var
     triage: {
       ask_severity: {
         en: "How bad is it, from 1 to 10?",
-        ur: "Kitna shadeed hai, 1 se 10 mein?",
+        ur: "Kitna shadeed hai, 1 se 10?",
       },
       ask_duration: {
         en: "How long has this been going on?",
-        ur: "Yeh kitne arse se ho raha hai?",
+        ur: "Kitne arse se hai?",
       },
     },
     medical_disclaimer: {
       _: {
         en: "I'm an AI assistant, not a doctor. For emergencies, call 1122.",
-        ur: "Main AI assistant hoon, doctor nahi. Emergency ke liye 1122 call karein.",
+        ur: "Main AI hoon, doctor nahi. Emergency ke liye 1122 call karein.",
       },
     },
   };
@@ -159,7 +159,7 @@ export function getVoicePrompt(intent: string, step: string, lang: Language, var
 
   // Fallback
   return lang === 'ur'
-    ? 'Main aapki kya madad kar sakta hoon?'
+    ? 'Kya madad chahiye?'
     : 'How can I help you?';
 }
 
