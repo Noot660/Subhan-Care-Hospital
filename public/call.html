@@ -3,117 +3,90 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Call — Subhan Care AI Receptionist</title>
+  <title>Voice Call — Subhan Care AI</title>
   <link rel="stylesheet" href="/css/call.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%231e40af'/><text x='16' y='22' text-anchor='middle' fill='white' font-size='18'>📞</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%231e40af'/><text x='16' y='22' text-anchor='middle' fill='white' font-size='16' font-weight='bold'>+</text></svg>">
 </head>
 <body>
-  <!-- Chat navigation -->
-  <nav class="call-nav">
-    <a href="/" title="Switch to Chat">💬 Chat</a>
-  </nav>
 
-  <!-- Main call container -->
-  <div class="call-container" id="callContainer">
-
-    <!-- Mic permission prompt (shown initially) -->
-    <div class="mic-prompt visible" id="micPrompt">
-      <div class="mic-icon">🎤</div>
-      <h2>Microphone Access</h2>
-      <p>Subhan Care uses your microphone to speak with our AI receptionist. Your voice is processed in real-time.</p>
-      <button class="btn btn-primary" id="micAllowBtn">🎤 Allow Microphone</button>
-      <button class="btn btn-retry" id="useTextBtn" style="display:none; margin-top:12px;">⌨️ Use Text Instead</button>
+  <!-- Top bar -->
+  <header class="top-bar">
+    <a href="/" class="back-link" title="Chat" aria-label="Switch to chat">💬 Chat</a>
+    <div class="brand">
+      <span class="brand-icon">+</span>
+      <span class="brand-text">Subhan Care AI</span>
     </div>
+    <button class="lang-toggle" id="langToggle" aria-label="Switch language">EN | <span class="lang-inactive">UR</span></button>
+  </header>
 
-    <!-- Active call UI (hidden initially) -->
-    <div id="callUI" style="display:none; flex-direction:column; align-items:center; width:100%; height:100%; justify-content:space-between;">
+  <!-- Main area -->
+  <main class="main-area">
 
-      <!-- Caller ID -->
-      <div class="caller-id">
-        <div class="name">Subhan Care AI Receptionist</div>
-        <div class="label">Incoming call — Connected</div>
-      </div>
-
-      <!-- Text mode banner -->
-      <div class="text-mode-banner" id="textModeBanner" style="display:none;">
-        ⌨️ Text Mode — Type your messages below
-      </div>
-
-      <!-- Timer -->
-      <div class="call-timer" id="callTimer">00:00</div>
-
-      <!-- Phone Icon with pulse -->
-      <div class="phone-icon-wrap">
-        <div class="pulse-ring"></div>
-        <div class="pulse-ring"></div>
-        <div class="pulse-ring"></div>
-        <div class="phone-icon" id="phoneIcon">📞</div>
-      </div>
-
-      <!-- Status -->
-      <div class="call-status">
-        <div class="status-text" id="statusText">Connecting...</div>
-        <div class="waveform" id="waveform" style="display:none;">
-          <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
-        </div>
-        <div class="listening-dots" id="listeningDots" style="display:none;">
-          <span></span><span></span><span></span>
-        </div>
-        <!-- Thinking pulsing dots (Bug 2.5) -->
-        <div class="thinking-dots" id="thinkingDots" style="display:none;">
-          <span></span><span></span><span></span>
-        </div>
-      </div>
-
-      <!-- Call summary (shown after hangup) -->
-      <div class="call-summary" id="callSummary">
-        <h3>Call Summary</h3>
-        <p id="callSummaryText"></p>
-      </div>
-
-      <!-- Transcript preview -->
-      <div class="transcript-preview" id="transcriptPreview"></div>
-
-      <!-- Error -->
-      <div class="call-error" id="callError"></div>
-
-      <!-- Bottom -->
-      <div class="call-bottom">
-        <div class="call-actions">
-          <button class="call-lang-toggle" id="langToggle" title="Switch language">اردو</button>
-        </div>
-        <button class="btn-end" id="endCallBtn" title="End Call">
-          <span style="transform: rotate(135deg); display: inline-block;">📞</span>
-        </button>
-        <div class="end-label">End Call</div>
-      </div>
-
-      <!-- Text input for fallback mode (Bug 5) -->
-      <div class="text-input-wrap" id="textInputWrap" style="display:none;">
-        <input type="text" id="textInput" class="text-input" placeholder="Type your message..." autocomplete="off">
-        <button class="btn btn-send" id="textSendBtn">Send</button>
+    <!-- Orb -->
+    <div class="orb-container" id="orbContainer">
+      <div class="orb-glow" id="orbGlow"></div>
+      <div class="orb-ring ring-1" id="ring1"></div>
+      <div class="orb-ring ring-2" id="ring2"></div>
+      <div class="orb-ring ring-3" id="ring3"></div>
+      <div class="orb-core" id="orbCore">
+        <svg class="orb-mic-icon" id="orbMicIcon" viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
       </div>
     </div>
 
-    <!-- Post-call UI (hidden) -->
-    <div id="postCallUI" style="display:none; flex-direction:column; align-items:center; gap:20px; text-align:center; width:100%;">
-      <div style="font-size:3rem;">📞</div>
-      <h2 style="color:#e0e0e0; font-size:1.2rem;">Call Ended</h2>
+    <!-- Status text -->
+    <p class="status-text" id="statusText">Tap the mic to speak</p>
 
-      <!-- Polish 3: Post-call summary card -->
-      <div class="call-summary visible" id="postCallSummary">
-        <h3>Call Summary</h3>
-        <p id="postCallSummaryText"></p>
-        <div class="post-call-actions" id="postCallActionsList"></div>
-      </div>
-
-      <div style="display:flex; gap:12px; flex-wrap:wrap; justify-content:center;">
-        <button class="btn btn-primary" id="recallBtn">🔄 Call Again</button>
-        <a href="/" class="btn btn-retry" style="text-decoration:none;">💬 Open Chat</a>
-      </div>
+    <!-- Transcript area -->
+    <div class="transcript-area" id="transcriptArea">
+      <div class="transcript-msg transcript-user" id="transcriptUser"></div>
+      <div class="transcript-msg transcript-ai" id="transcriptAI"></div>
     </div>
 
-  </div>
+    <!-- Text input (hidden by default) -->
+    <div class="text-fallback" id="textFallback" style="display:none;">
+      <input type="text" id="textInput" class="text-input" placeholder="Type your message..." autocomplete="off" maxlength="300">
+      <button class="text-send-btn" id="textSendBtn" aria-label="Send">➤</button>
+    </div>
+
+  </main>
+
+  <!-- Bottom controls -->
+  <footer class="bottom-bar">
+    <div class="mic-area">
+      <!-- Mode toggle (small) -->
+      <button class="mode-toggle" id="modeToggle" title="Switch to Auto mode">
+        <span class="mode-badge">Tap</span>
+      </button>
+
+      <!-- Big mic button -->
+      <button class="mic-btn" id="micBtn" aria-label="Tap to speak">
+        <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+          <line x1="12" y1="19" x2="12" y2="23"/>
+          <line x1="8" y1="23" x2="16" y2="23"/>
+        </svg>
+      </button>
+
+      <!-- Type instead -->
+      <button class="type-btn" id="typeBtn" aria-label="Type instead">⌨</button>
+
+      <!-- End call -->
+      <button class="end-btn" id="endBtn" aria-label="End call">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+          <path d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.02-.24 11.36 11.36 0 0 0 3.57.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1 11.36 11.36 0 0 0 .57 3.57 1 1 0 0 1-.25 1.02l-2.2 2.2z" transform="rotate(135 12 12)"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Call timer -->
+    <div class="call-timer" id="callTimer">00:00</div>
+  </footer>
 
   <script type="module" src="/js/call.js"></script>
 </body>
