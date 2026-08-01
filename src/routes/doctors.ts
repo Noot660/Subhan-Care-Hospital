@@ -91,11 +91,30 @@ async function handleGetDoctorSlots(request: Request, id: string): Promise<Respo
   return json({ doctor_id: doctor.id, doctor_name: doctor.name, date, day_of_week: dayOfWeek, slots: allSlots });
 }
 
+async function handleToggleAvailability(request: Request, id: string): Promise<Response> {
+  try {
+    const db = getDb();
+    const isNumeric = /^\d+$/.test(id);
+    const doctor = isNumeric ? (db.query("SELECT * FROM doctors WHERE id = ?").get(Number(id)) as Doctor | undefined) : null;
+    if (!doctor) return error("Doctor not found", 404);
+    const newStatus = doctor.status === "active" ? "inactive" : "active";
+    db.run("UPDATE doctors SET status = ? WHERE id = ?", [newStatus, doctor.id]);
+    const token = extractToken(request);
+    const session = validateSession(token || "");
+    if (session) auditLog({ user_id: session.user_id, action: "toggle_availability", entity_type: "doctor", entity_id: String(doctor.id), details: { old_status: doctor.status, new_status: newStatus } });
+    return json({ id: doctor.id, name: doctor.name, status: newStatus });
+  } catch (err) {
+    return error(err instanceof Error ? err.message : "Bad request", 400);
+  }
+}
+
 export async function handleDoctors(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const pathname = url.pathname;
   const slotsMatch = matchPath("/api/doctors/:id/slots", pathname);
   if (slotsMatch && request.method === "GET") return handleGetDoctorSlots(request, slotsMatch.id);
+  const availMatch = matchPath("/api/doctors/:id/availability", pathname);
+  if (availMatch && request.method === "POST") return handleToggleAvailability(request, availMatch.id);
   const detailMatch = matchPath("/api/doctors/:id", pathname);
   if (detailMatch && request.method === "GET") return handleGetDoctor(request, detailMatch.id);
   if (pathname === "/api/doctors" && request.method === "POST") return handleCreateDoctor(request);

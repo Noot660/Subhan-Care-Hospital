@@ -2,11 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>Subhan Care AI Receptionist</title>
-  <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="/css/chat.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%231e40af'/><text x='16' y='22' text-anchor='middle' fill='white' font-size='18'>+</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231e40af'/><text x='16' y='23' text-anchor='middle' fill='white' font-size='20' font-weight='bold'>+</text></svg>">
 </head>
 <body>
   <div class="chat-container">
@@ -14,20 +13,16 @@
     <header class="chat-header">
       <div class="chat-header-left">
         <div class="chat-logo">+</div>
-        <div>
-          <h1 class="chat-title">Subhan Care AI Receptionist</h1>
-          <span class="chat-subtitle">24/7 • Instant responses • Multi-language</span>
+        <div class="chat-header-text">
+          <div class="chat-title">Subhan Care AI</div>
+          <div class="chat-subtitle">Online · Instant responses</div>
         </div>
       </div>
       <div class="chat-header-actions">
-        <a href="/call" class="btn btn-sm btn-outline" style="text-decoration:none" title="Voice Call">📞 Call Us</a>
-        <button class="btn btn-sm btn-outline" id="langToggle" title="Switch language">
-          <span id="langLabel">اردو</span>
-        </button>
-        <button class="btn btn-sm btn-outline" id="speakerToggle" title="Toggle voice output">
-          <span id="speakerIcon">🔊</span>
-        </button>
-        <a href="/login" class="btn btn-sm btn-outline" style="text-decoration:none">👤 Staff Login</a>
+        <a href="/call" class="btn-sm">📞 Call</a>
+        <button class="btn-sm" id="langToggle"><span id="langLabel">اردو</span></button>
+        <button class="btn-sm" id="speakerToggle"><span id="speakerIcon">🔊</span></button>
+        <a href="/login" class="btn-sm">👤 Login</a>
       </div>
     </header>
 
@@ -36,48 +31,45 @@
       <button class="chip" data-msg="I want to book an appointment">📅 Book Appointment</button>
       <button class="chip" data-msg="I want to register as a new patient">🩺 New Patient</button>
       <button class="chip" data-msg="FAQs">❓ FAQs</button>
-      <button class="chip" data-msg="Check my appointment">🔍 Check Appointment</button>
+      <button class="chip" data-msg="Check my appointment">🔍 My Appointments</button>
       <button class="chip" data-msg="I have a health concern">🏥 Symptom Check</button>
     </div>
 
-    <!-- Messages Area -->
+    <!-- Messages -->
     <div class="chat-messages" id="chatMessages">
       <div class="chat-bubble bot">
-        <div class="bubble-avatar">🤖</div>
+        <div class="bubble-avatar">+</div>
         <div class="bubble-content">
-          <p>👋 Welcome to <strong>Subhan Care Hospital</strong>! I'm your AI receptionist. How can I help you today?</p>
-          <p class="bubble-hint">You can register, book appointments, check status, ask about our services, or describe symptoms for guidance.</p>
+          <p>👋 Welcome to <strong>Subhan Care Hospital</strong>!</p>
+          <p>I'm your AI receptionist — here 24/7 to help with:</p>
+          <p class="bubble-hint">• Booking appointments<br>• New patient registration<br>• Appointment status<br>• Hospital info & FAQs<br>• Symptom guidance</p>
         </div>
       </div>
     </div>
 
-    <!-- Typing indicator (hidden by default) -->
+    <!-- Typing indicator -->
     <div class="chat-typing hidden" id="typingIndicator">
       <div class="typing-dots"><span></span><span></span><span></span></div>
-      <span class="typing-text">AI is typing...</span>
+      <span>AI is typing...</span>
     </div>
 
     <!-- Session warning -->
     <div class="chat-session-warning hidden" id="sessionWarning">
-      ⚠️ Session expired — starting a new conversation
+      Session restarted — your previous conversation expired.
     </div>
 
-    <!-- Input Area -->
+    <!-- Input -->
     <div class="chat-input-area">
-      <button class="btn btn-icon mic-btn" id="micButton" title="Voice input">
-        🎤
-      </button>
+      <button class="btn-icon mic-btn" id="micButton" title="Voice input">🎤</button>
       <input type="text" class="chat-input" id="chatInput"
              placeholder="Type your message..."
              autocomplete="off" autofocus>
-      <button class="btn btn-primary send-btn" id="sendButton" title="Send message">
-        ➤
-      </button>
+      <button class="send-btn" id="sendButton" title="Send">➤</button>
     </div>
 
     <!-- Footer -->
     <div class="chat-footer">
-      <span>⚠️ AI assistant — not a doctor. For emergencies, call <strong>1122</strong>.</span>
+      ⚠️ AI assistant — not a doctor. For emergencies, call <strong>1122</strong>.
     </div>
   </div>
 

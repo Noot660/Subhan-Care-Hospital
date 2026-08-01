@@ -189,7 +189,22 @@ export function statusBadge(status) {
     paid: 'badge-green',
     unpaid: 'badge-red',
     dispensed: 'badge-teal',
+    finalized: 'badge-orange',
+    draft: 'badge-gray',
+    partially_paid: 'badge-amber',
+    available: 'badge-green',
+    unavailable: 'badge-red',
+    'in-stock': 'badge-green',
+    'low-stock': 'badge-orange',
+    'out-of-stock': 'badge-red',
   };
   const cls = colors[status] || 'badge-gray';
-  return `<span class="badge ${cls}">${status}</span>`;
+  const label = (status || '').replace(/_/g, ' ');
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+// Format a number as PKR currency
+export function formatRs(amount) {
+  const n = Number(amount) || 0;
+  return 'Rs. ' + n.toLocaleString('en-PK', { maximumFractionDigits: 0 });
 }

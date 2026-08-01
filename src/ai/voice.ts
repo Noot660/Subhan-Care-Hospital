@@ -1,9 +1,8 @@
 // Voice-optimized conversation handler
 // Short, conversational prompts for spoken language
-// "People can't scan spoken text" — keep everything under 15 words
+// "People can't scan spoken text" — keep everything under 15 words / 80 chars
 
 import type { Language } from './i18n';
-import { stripForSpeech } from './tts';
 
 // ── Call end detection ──
 
@@ -24,13 +23,13 @@ export function detectCallEnd(message: string): boolean {
   return END_CALL_PATTERNS.some(p => p.test(message));
 }
 
-// ── Voice-optimized greetings ──
+// ── Voice-optimized greetings (under 80 chars) ──
 
 export function getVoiceGreeting(lang: Language): string {
   if (lang === 'ur') {
-    return 'Subhan Care mein khushamdeed. Main aapka AI receptionist hoon. Bataaiye, kya madad chahiye?';
+    return 'Subhan Care mein khushamdeed. Bataaiye, kya madad chahiye?';
   }
-  return 'Thank you for calling Subhan Care Hospital. How can I help you today?';
+  return 'Thank you for calling Subhan Care. How can I help you today?';
 }
 
 // ── Voice-optimized closing ──
@@ -42,7 +41,6 @@ export function getVoiceClosing(lang: Language, summary?: string): string {
 
   if (!summary) return base;
 
-  // Prepend a brief TL;DR summary
   const prefix = lang === 'ur'
     ? `Aapne ${summary}`
     : `You ${summary}.`;
@@ -142,7 +140,6 @@ export function getVoicePrompt(intent: string, step: string, lang: Language, var
     },
   };
 
-  // Look up prompt
   const intentPrompts = prompts[intent];
   if (intentPrompts) {
     const stepPrompts = intentPrompts[step] || intentPrompts['_'];
@@ -157,16 +154,45 @@ export function getVoicePrompt(intent: string, step: string, lang: Language, var
     }
   }
 
-  // Fallback
   return lang === 'ur'
     ? 'Kya madad chahiye?'
     : 'How can I help you?';
 }
 
 // ── Prepare text for speech synthesis ──
+// Short, conversational: 1 sentence, max 150 chars — spoken in <4 seconds.
+// Voice calls should feel like quick back-and-forth, not monologues.
 
 export function prepareForSpeech(text: string): string {
-  return stripForSpeech(text);
+  // Strip all markdown formatting
+  let cleaned = text
+    .replace(/\*\*(.*?)\*\*/g, '$1')   // bold
+    .replace(/__(.*?)__/g, '$1')       // underline bold
+    .replace(/\*(.*?)\*/g, '$1')       // italic
+    .replace(/`(.*?)`/g, '$1')         // code
+    .replace(/[#*_~`>|-]/g, '')        // remaining markdown chars
+    .replace(/[\u{1F300}-\u{1FAFF}]/gu, '')  // emoji
+    .replace(/\n{2,}/g, '. ')          // double newlines → period
+    .replace(/\n/g, ' ')               // single newlines → space
+    .replace(/\s{2,}/g, ' ')           // collapse spaces
+    .trim();
+
+  // Split on sentence boundaries
+  const sentences = cleaned.match(/[^.!?]+[.!?]+/g) || [cleaned];
+
+  // Take FIRST sentence only for voice — keep conversations snappy
+  let result = sentences[0].trim();
+
+  // If still over 150 chars, truncate at last word boundary
+  if (result.length > 150) {
+    result = result.substring(0, 150);
+    const lastSpace = result.lastIndexOf(' ');
+    if (lastSpace > 60) {
+      result = result.substring(0, lastSpace) + '.';
+    }
+  }
+
+  return result;
 }
 
 // ── Summarize a call for the closing message ──
@@ -185,8 +211,7 @@ export function summarizeCall(actions: Array<{ type: string; data: unknown }>): 
         break;
       }
       case 'patient_created': {
-        const d = action.data as Record<string, unknown>;
-        summaries.push(`registered as a new patient`);
+        summaries.push('registered as a new patient');
         break;
       }
       case 'appointment_cancelled':

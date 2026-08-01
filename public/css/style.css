@@ -30,6 +30,19 @@
   --shadow-md: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.06);
   --shadow-lg: 0 10px 15px rgba(0,0,0,0.1), 0 4px 6px rgba(0,0,0,0.05);
   --transition: 0.2s ease;
+
+  /* Premium dark theme tokens (used by login & dashboard pages) */
+  --bg-start: #0a0f1e;
+  --bg-end: #0d1529;
+  --surface: rgba(255,255,255,0.04);
+  --surface-hover: rgba(255,255,255,0.07);
+  --text: #e0e0e0;
+  --text-dim: #7a7f8c;
+  --blue: #3b82f6;
+  --blue-glow: rgba(59,130,246,0.4);
+  --green: #22c55e;
+  --amber: #f59e0b;
+  --red: #ef4444;
 }
 
 /* ── Reset & Base ── */

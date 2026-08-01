@@ -146,6 +146,124 @@ async function seed() {
 
   console.log(`✅ 3 sample appointments created for ${tomorrowStr}`);
 
+  // ── 6. Today's appointments (for live dashboard demo) ──
+  const today = new Date();
+  const todayStr = today.toISOString().split("T")[0];
+  db.run(
+    `INSERT INTO appointments (patient_id, doctor_id, date, start_time, end_time, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 'scheduled', ?, ?)`,
+    [1, 1, todayStr, "09:00", "09:30", now, now]
+  );
+  db.run(
+    `INSERT INTO appointments (patient_id, doctor_id, date, start_time, end_time, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 'scheduled', ?, ?)`,
+    [2, 2, todayStr, "10:00", "10:30", now, now]
+  );
+  db.run(
+    `INSERT INTO appointments (patient_id, doctor_id, date, start_time, end_time, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 'checked-in', ?, ?)`,
+    [4, 1, todayStr, "11:00", "11:30", now, now]
+  );
+  db.run(
+    `INSERT INTO appointments (patient_id, doctor_id, date, start_time, end_time, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 'completed', ?, ?)`,
+    [5, 2, todayStr, "12:00", "12:30", now, now]
+  );
+  console.log(`✅ 4 sample appointments created for ${todayStr}`);
+
+  // ── 7. Consultations + prescriptions (for doctor history & pharmacist views) ──
+  const consResult = db.run(
+    `INSERT INTO consultations (appointment_id, patient_id, doctor_id, diagnosis, notes, vitals, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [7, 5, 2, "Upper respiratory tract infection", "Prescribed antibiotics and rest. Follow up in 1 week.", JSON.stringify({ bp: "120/80", temp: "98.6F", pulse: "72" }), now]
+  );
+  const consId = Number(consResult.lastInsertRowid);
+  const rxResult = db.run(
+    `INSERT INTO prescriptions (consultation_id, patient_id, doctor_id, status, created_at) VALUES (?, ?, ?, 'finalized', ?)`,
+    [consId, 5, 2, now]
+  );
+  const rxId = Number(rxResult.lastInsertRowid);
+  db.run(
+    `INSERT INTO prescription_items (prescription_id, medicine_name, dosage, frequency, duration, instructions)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [rxId, "Amoxil 250mg", "250mg", "3 times daily", "5 days", "After meals"]
+  );
+  db.run(
+    `INSERT INTO prescription_items (prescription_id, medicine_name, dosage, frequency, duration, instructions)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [rxId, "Panadol 500mg", "500mg", "2 times daily", "3 days", "If fever"]
+  );
+  // A second consultation + prescription (dispensed) for patient 4
+  const cons2Result = db.run(
+    `INSERT INTO consultations (appointment_id, patient_id, doctor_id, diagnosis, notes, vitals, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [6, 4, 1, "Hypertension follow-up", "BP controlled. Continue current medication.", JSON.stringify({ bp: "130/85", temp: "98.4F" }), now]
+  );
+  const cons2Id = Number(cons2Result.lastInsertRowid);
+  const rx2Result = db.run(
+    `INSERT INTO prescriptions (consultation_id, patient_id, doctor_id, status, created_at) VALUES (?, ?, ?, 'dispensed', ?)`,
+    [cons2Id, 4, 1, now]
+  );
+  const rx2Id = Number(rx2Result.lastInsertRowid);
+  db.run(
+    `INSERT INTO prescription_items (prescription_id, medicine_name, dosage, frequency, duration, instructions)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [rx2Id, "Norvasc 5mg", "5mg", "once daily", "30 days", "Morning"]
+  );
+  console.log("✅ 2 consultations with prescriptions created");
+
+  // ── 8. Invoices + payments (for billing views) ──
+  const inv1 = db.run(
+    `INSERT INTO invoices (invoice_number, patient_id, appointment_id, status, subtotal, total, created_at, updated_at)
+     VALUES ('INV-0001', 1, NULL, 'paid', 2000, 2000, ?, ?)`, [now, now]
+  );
+  db.run(
+    `INSERT INTO invoice_items (invoice_id, description, type, quantity, unit_price, total) VALUES (?, 'Cardiology Consultation', 'consultation', 1, 2000, 2000)`,
+    [Number(inv1.lastInsertRowid)]
+  );
+  db.run(
+    `INSERT INTO payments (invoice_id, amount, method, reference, created_at) VALUES (?, 2000, 'cash', 'Walk-in payment', ?)`,
+    [Number(inv1.lastInsertRowid), now]
+  );
+  const inv2 = db.run(
+    `INSERT INTO invoices (invoice_number, patient_id, appointment_id, status, subtotal, total, created_at, updated_at)
+     VALUES ('INV-0002', 2, NULL, 'finalized', 2650, 2650, ?, ?)`, [now, now]
+  );
+  db.run(
+    `INSERT INTO invoice_items (invoice_id, description, type, quantity, unit_price, total) VALUES (?, 'Pediatric Consultation', 'consultation', 1, 1500, 1500)`,
+    [Number(inv2.lastInsertRowid)]
+  );
+  db.run(
+    `INSERT INTO invoice_items (invoice_id, description, type, quantity, unit_price, total) VALUES (?, 'Panadol 500mg', 'medicine', 2, 25, 50)`,
+    [Number(inv2.lastInsertRowid)]
+  );
+  db.run(
+    `INSERT INTO invoice_items (invoice_id, description, type, quantity, unit_price, total) VALUES (?, 'Lab Tests (CBC)', 'supplementary', 1, 1100, 1100)`,
+    [Number(inv2.lastInsertRowid)]
+  );
+  const inv3 = db.run(
+    `INSERT INTO invoices (invoice_number, patient_id, appointment_id, status, subtotal, total, created_at, updated_at)
+     VALUES ('INV-0003', 3, NULL, 'paid', 800, 800, ?, ?)`, [now, now]
+  );
+  db.run(
+    `INSERT INTO invoice_items (invoice_id, description, type, quantity, unit_price, total) VALUES (?, 'Consultation', 'consultation', 1, 800, 800)`,
+    [Number(inv3.lastInsertRowid)]
+  );
+  db.run(
+    `INSERT INTO payments (invoice_id, amount, method, reference, created_at) VALUES (?, 800, 'card', 'Card payment', ?)`,
+    [Number(inv3.lastInsertRowid), now]
+  );
+  const inv4 = db.run(
+    `INSERT INTO invoices (invoice_number, patient_id, appointment_id, status, subtotal, total, created_at, updated_at)
+     VALUES ('INV-0004', 4, NULL, 'draft', 1750, 1750, ?, ?)`, [now, now]
+  );
+  db.run(
+    `INSERT INTO invoice_items (invoice_id, description, type, quantity, unit_price, total) VALUES (?, 'Cardiology Consultation', 'consultation', 1, 2000, 2000)`,
+    [Number(inv4.lastInsertRowid)]
+  );
+  console.log("✅ 4 sample invoices created (2 paid, 1 finalized pending, 1 draft)");
+
+
   closeDb();
   console.log("\n🎉 Database seeded successfully!");
 }
