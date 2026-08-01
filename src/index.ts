@@ -12,6 +12,9 @@ import { handleDoctors } from "./routes/doctors";
 import { handleAppointments } from "./routes/appointments";
 import { handleReceptionist } from "./routes/receptionist";
 import { handleTwilio } from "./routes/twilio";
+import { handlePharmacy } from "./routes/pharmacy";
+import { handleBilling } from "./routes/billing";
+import { handleConsultations } from "./routes/consultations";
 
 // Whitelist of endpoints that don't require authentication
 const PUBLIC_ENDPOINTS = [
@@ -178,6 +181,21 @@ async function handleRequest(request: Request): Promise<Response> {
   // Appointments
   if (pathname.startsWith("/api/appointments")) {
     return handleAppointments(request);
+  }
+
+  // Pharmacy (medicines, prescriptions) — RBAC module "pharmacy"
+  if (pathname.startsWith("/api/pharmacy")) {
+    return handlePharmacy(request);
+  }
+
+  // Billing (invoices, payments, summary, collections) — RBAC module "billing"
+  if (pathname.startsWith("/api/billing") || pathname.startsWith("/api/invoices") || pathname.startsWith("/api/payments")) {
+    return handleBilling(request);
+  }
+
+  // Consultations — RBAC module "consultations"
+  if (pathname.startsWith("/api/consultations")) {
+    return handleConsultations(request);
   }
 
   // AI Receptionist (public — no auth required)

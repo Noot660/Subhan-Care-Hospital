@@ -15,6 +15,7 @@
     <div class="brand">
       <span class="brand-icon">+</span>
       <span class="brand-text">Subhan Care AI</span>
+      <span class="connection-dot" id="connectionDot" title="Connected"></span>
     </div>
     <button class="lang-toggle" id="langToggle" aria-label="Switch language">EN | <span class="lang-inactive">UR</span></button>
   </header>
@@ -28,6 +29,7 @@
       <div class="orb-ring ring-1" id="ring1"></div>
       <div class="orb-ring ring-2" id="ring2"></div>
       <div class="orb-ring ring-3" id="ring3"></div>
+      <div class="audio-bars" id="audioBars"><span></span><span></span><span></span><span></span><span></span></div>
       <div class="orb-core" id="orbCore">
         <svg class="orb-mic-icon" id="orbMicIcon" viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
@@ -40,6 +42,9 @@
 
     <!-- Status text -->
     <p class="status-text" id="statusText">Tap the mic to speak</p>
+
+    <!-- Quick action chips -->
+    <div class="quick-chips" id="quickChips"></div>
 
     <!-- Transcript area -->
     <div class="transcript-area" id="transcriptArea">
@@ -72,6 +77,12 @@
           <line x1="8" y1="23" x2="16" y2="23"/>
         </svg>
       </button>
+
+      <!-- Mute toggle -->
+      <button class="mute-btn" id="muteBtn" aria-label="Mute">🔊</button>
+
+      <!-- Speaker toggle -->
+      <button class="speaker-btn" id="speakerBtn" aria-label="Speaker">📢</button>
 
       <!-- Type instead -->
       <button class="type-btn" id="typeBtn" aria-label="Type instead">⌨</button>

@@ -9,7 +9,9 @@
     "build": "echo 'No build needed — Bun runs TypeScript directly'",
     "publish": "bash ./publish.sh"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@neondatabase/serverless": "^1.1.0"
+  },
   "devDependencies": {
     "@types/bun": "latest"
   }

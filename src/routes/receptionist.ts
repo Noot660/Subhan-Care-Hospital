@@ -8,7 +8,7 @@ import { prepareTTS, stripForSpeech } from '../ai/tts';
 import { getVoiceGreeting, getVoicePrompt, detectCallEnd, summarizeCall, prepareForSpeech } from '../ai/voice';
 import type { Language } from '../ai/i18n';
 
-// Main chat endpoint
+// Main chat endpoint — full-text responses
 async function handleChat(request: Request): Promise<Response> {
   try {
     const body = await parseBody<{
@@ -70,7 +70,8 @@ async function handleTTS(request: Request): Promise<Response> {
   return json(ttsPayload);
 }
 
-// Voice-optimized chat endpoint
+// ── Voice-optimized chat endpoint ──
+// Returns SHORT responses suitable for spoken delivery (<5 seconds)
 async function handleVoiceChat(request: Request): Promise<Response> {
   try {
     const body = await parseBody<{
@@ -88,21 +89,29 @@ async function handleVoiceChat(request: Request): Promise<Response> {
     }
 
     const lang: Language = body.language === 'ur' ? 'ur' : 'en';
+    const userMessage = body.message.trim();
 
-    // Check if user wants to end call
-    const shouldEndCall = detectCallEnd(body.message.trim());
+    // Check if user wants to end the call
+    const userWantsEnd = detectCallEnd(userMessage);
 
-    // Process through standard intents but optimize response for speech
+    // Process through the standard intents pipeline
     const result = await handleMessage(
-      body.message.trim(),
+      userMessage,
       body.session_id || null,
       lang
     );
 
-    // Shorten the reply for spoken delivery
+    // Shorten the reply for spoken delivery: 1-2 sentences, under 200 chars
     const shortReply = prepareForSpeech(result.reply);
 
-    // Build voice-optimized response
+    // Determine if call should end: either user said goodbye OR the conversation is complete
+    const shouldEndCall = userWantsEnd || !result.conversation_active;
+
+    // Build call summary if ending
+    const callSummary = shouldEndCall && result.action
+      ? summarizeCall([result.action])
+      : null;
+
     return json({
       reply: shortReply,
       session_id: result.session_id,
@@ -110,10 +119,8 @@ async function handleVoiceChat(request: Request): Promise<Response> {
       action: result.action || null,
       language: lang,
       conversation_active: result.conversation_active,
-      should_end_call: shouldEndCall || !result.conversation_active,
-      call_summary: (!result.conversation_active && result.action)
-        ? summarizeCall([result.action])
-        : null,
+      should_end_call: shouldEndCall,
+      call_summary: callSummary,
     });
   } catch (err) {
     return error(err instanceof Error ? err.message : 'Bad request', 400);

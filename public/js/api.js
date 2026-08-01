@@ -98,6 +98,13 @@ export const api = {
     });
   },
 
+  deactivatePatient(id) {
+    return request(`/api/patients/${id}/deactivate`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  },
+
   // Doctors
   listDoctors(params = {}) {
     const qs = new URLSearchParams(params).toString();
@@ -110,6 +117,80 @@ export const api = {
 
   getDoctorSlots(id, date) {
     return request(`/api/doctors/${id}/slots?date=${date}`);
+  },
+
+  toggleDoctorAvailability(id) {
+    return request(`/api/doctors/${id}/availability`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  },
+
+  // Pharmacy
+  listMedicines(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/api/pharmacy/medicines${qs ? '?' + qs : ''}`);
+  },
+
+  restockMedicine(id, quantity) {
+    return request(`/api/pharmacy/medicines/${id}/restock`, {
+      method: 'POST',
+      body: JSON.stringify({ quantity }),
+    });
+  },
+
+  listPrescriptions(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/api/pharmacy/prescriptions${qs ? '?' + qs : ''}`);
+  },
+
+  dispensePrescription(id) {
+    return request(`/api/pharmacy/prescriptions/${id}/dispense`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  },
+
+  // Billing
+  listInvoices(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/api/billing/invoices${qs ? '?' + qs : ''}`);
+  },
+
+  createInvoice(data) {
+    return request('/api/billing/invoices', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  payInvoice(id, amount, method) {
+    return request(`/api/billing/invoices/${id}/pay`, {
+      method: 'POST',
+      body: JSON.stringify({ amount, method: method || 'cash' }),
+    });
+  },
+
+  billingSummary(period = 'today') {
+    return request(`/api/billing/summary?period=${period}`);
+  },
+
+  listCollections(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/api/billing/collections${qs ? '?' + qs : ''}`);
+  },
+
+  // Consultations
+  listConsultations(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/api/consultations${qs ? '?' + qs : ''}`);
+  },
+
+  createConsultation(data) {
+    return request('/api/consultations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   },
 
   // Appointments
