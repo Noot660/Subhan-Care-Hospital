@@ -117,7 +117,7 @@ async function handleTwilioGather(request: Request): Promise<Response> {
 
   // Process through AI
   try {
-    const result: ReceptionistResponse = await handleMessage(speechResult, sessionId || null, lang);
+    const result: ReceptionistResponse = await handleMessage(speechResult, sessionId || null, lang, 'twilio');
 
     // Update session tracking
     call.sessionId = result.session_id;

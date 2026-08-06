@@ -54,6 +54,7 @@ export interface Appointment {
   end_time: string;
   status: string;
   cancellation_reason: string | null;
+  source: string;
   created_at: string;
   updated_at: string;
 }
