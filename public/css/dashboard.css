@@ -645,6 +645,12 @@
   color: #fca5a5; border-radius: 8px; padding: 9px 12px; font-size: 0.8rem; margin-bottom: 12px;
 }
 
+/* ── Two-column card grid (analytics) ── */
+.dash-body .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 900px) {
+  .dash-body .grid-2 { grid-template-columns: 1fr; }
+}
+
 /* ═══════════════ RESPONSIVE ═══════════════ */
 
 /* Below 1024px: collapse sidebar to icon-only, expand on hover */

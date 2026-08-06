@@ -887,6 +887,105 @@ async function renderAiOpsView() {
   startAutoRefresh(async () => { await Promise.all([renderKpis(), renderFeed()]); markUpdated(); }, 25_000);
 }
 
+// ── Admin: Analytics (KPIs + channel breakdown, period selector) ──
+function fmtNum(n) { return Number(n || 0).toLocaleString('en-PK'); }
+
+const CHANNEL_META = {
+  staff: { label: '🏥 Staff', color: '#94a3b8' },
+  chat: { label: '💬 Chat', color: '#3b82f6' },
+  voice: { label: '📞 Voice', color: '#a78bfa' },
+  twilio: { label: '📞 Twilio', color: '#2dd4bf' },
+};
+
+async function renderAnalyticsView() {
+  content.innerHTML = `
+    <div class="section-head">
+      <div><h3>Analytics</h3><div class="sub">Appointments, AI adoption and booking channels</div></div>
+      <div class="filter-chips" id="analyticsPeriodChips">
+        <button class="chip" data-key="today">Today</button>
+        <button class="chip active" data-key="7d">7 days</button>
+        <button class="chip" data-key="30d">30 days</button>
+      </div>
+    </div>
+    <div id="analyticsKpis">${skeletonCards(6)}</div>
+    <div class="grid-2" style="margin-top:16px">
+      <div class="card"><div class="card-header"><h4>Appointment Sources</h4></div>
+        <div class="card-body" id="analyticsChannels">${skeletonCards(2)}</div></div>
+      <div class="card"><div class="card-header"><h4>AI Bookings by Channel</h4></div>
+        <div class="card-body" id="analyticsAiChannels">${skeletonCards(2)}</div></div>
+    </div>
+  `;
+
+  const chips = document.getElementById('analyticsPeriodChips');
+  let period = '7d';
+
+  const channelBars = (data, total) => {
+    return Object.entries(data).map(([src, count]) => {
+      const meta = CHANNEL_META[src] || { label: src, color: '#94a3b8' };
+      const n = Number(count) || 0;
+      const pct = total ? Math.round((n / total) * 100) : 0;
+      return `
+        <div class="channel-bar-row">
+          <span class="channel-bar-label">${meta.label}</span>
+          <div class="channel-bar-track"><div class="channel-bar-fill" style="width:${pct}%;background:${meta.color}"></div></div>
+          <span class="channel-bar-count">${fmtNum(n)}</span>
+        </div>`;
+    }).join('');
+  };
+
+  const render = async () => {
+    const kpiEl = document.getElementById('analyticsKpis');
+    const chEl = document.getElementById('analyticsChannels');
+    const aiChEl = document.getElementById('analyticsAiChannels');
+    kpiEl.innerHTML = skeletonCards(6);
+    chEl.innerHTML = skeletonCards(2);
+    aiChEl.innerHTML = skeletonCards(2);
+    try {
+      const [o, ch] = await Promise.all([
+        api.analyticsOverview(period),
+        api.channels(period),
+      ]);
+      const totalCh = Object.values(ch.channels || {}).reduce((s, v) => s + (Number(v) || 0), 0);
+      kpiEl.innerHTML = `
+        <div class="stats-grid">
+          <div class="stats-card"><div class="stats-icon" style="background:rgba(59,130,246,0.14);color:#93c5fd">📅</div>
+            <div><span class="stats-value">${fmtNum(o.total_appointments)}</span><span class="stats-label">Total Appointments</span></div></div>
+          <div class="stats-card st-purple"><div class="stats-icon" style="background:rgba(167,139,250,0.14);color:#c4b5fd">🤖</div>
+            <div><span class="stats-value">${fmtNum(o.ai_booked)}</span><span class="stats-label">AI-handled Bookings</span></div></div>
+          <div class="stats-card st-green"><div class="stats-icon" style="background:rgba(34,197,94,0.14);color:#86efac">⚡</div>
+            <div><span class="stats-value">${o.ai_booking_conversion ?? 0}%</span><span class="stats-label">AI Booking Conversion</span></div></div>
+          <div class="stats-card st-red"><div class="stats-icon" style="background:rgba(239,68,68,0.14);color:#fca5a5">❌</div>
+            <div><span class="stats-value">${fmtNum(o.cancellations)}</span><span class="stats-label">Cancellations</span></div></div>
+          <div class="stats-card st-blue"><div class="stats-icon" style="background:rgba(59,130,246,0.14);color:#93c5fd">💬</div>
+            <div><span class="stats-value">${fmtNum(o.faqs_answered)}</span><span class="stats-label">FAQs Answered</span></div></div>
+          <div class="stats-card st-amber"><div class="stats-icon" style="background:rgba(245,158,11,0.14);color:#fcd34d">🩺</div>
+            <div><span class="stats-value">${fmtNum(o.triage_count)}</span><span class="stats-label">Triages</span></div></div>
+        </div>`;
+      chEl.innerHTML = totalCh ? channelBars(ch.channels, totalCh) : '<p class="text-muted" style="font-size:0.85rem">No appointments in this period.</p>';
+      const aiCh = o.ai_bookings_by_channel || {};
+      const aiTotal = (aiCh.chat || 0) + (aiCh.voice || 0) + (aiCh.twilio || 0);
+      aiChEl.innerHTML = aiTotal ? channelBars(aiCh, aiTotal) : '<p class="text-muted" style="font-size:0.85rem">No AI bookings in this period yet.</p>';
+    } catch (err) {
+      kpiEl.innerHTML = '';
+      kpiEl.appendChild(errorBanner('Could not load analytics — ' + err.message, render));
+      chEl.innerHTML = '';
+      aiChEl.innerHTML = '';
+    }
+  };
+
+  chips.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    chips.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    period = chip.dataset.key;
+    render();
+  });
+
+  await render();
+}
+
+
 // ── Admin + pharmacist: pharmacy ──
 async function renderPharmacyView() {
   content.innerHTML = `
