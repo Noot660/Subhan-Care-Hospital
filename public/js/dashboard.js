@@ -986,6 +986,273 @@ async function renderAnalyticsView() {
 }
 
 
+// ── Admin: Consultations ──
+async function renderConsultationsView() {
+  content.innerHTML = `
+    <div class="section-head">
+      <div><h3>Consultations</h3><div class="sub">All recorded consultations across doctors</div></div>
+      <div class="toolbar"><div class="search-bar" style="min-width:220px">
+        <input type="text" id="conSearch" placeholder="Search patient, doctor or diagnosis…">
+      </div></div>
+    </div>
+    <div id="conList">${skeletonTable(6)}</div>
+  `;
+
+  let consultations = [];
+
+  const renderList = (q = '') => {
+    const listEl = document.getElementById('conList');
+    listEl.innerHTML = '';
+    if (!consultations.length) {
+      listEl.innerHTML = emptyState('📋', 'No consultations yet', 'Consultations recorded by doctors will appear here.');
+      return;
+    }
+    const ql = q.toLowerCase();
+    const filtered = ql ? consultations.filter(c =>
+      (c.patient_name || '').toLowerCase().includes(ql) ||
+      (c.doctor_name || '').toLowerCase().includes(ql) ||
+      (c.diagnosis || '').toLowerCase().includes(ql)
+    ) : consultations;
+    if (!filtered.length) {
+      listEl.innerHTML = emptyState('🔍', 'No matching consultations', 'Try a different search term.');
+      return;
+    }
+    const rows = filtered.map(c => ({
+      cells: [
+        `<strong>${esc(c.patient_name || '—')}</strong><br><small class="text-muted">${esc(c.patient_code || '')}</small>`,
+        esc(c.doctor_name || '—'),
+        formatDate(c.appointment_date) + (c.start_time ? ` · ${esc(c.start_time)}` : ''),
+        esc(c.diagnosis || '—'),
+        esc(c.notes || '—'),
+        statusBadge(c.prescription_status || '—'),
+      ],
+    }));
+    const table = document.createElement('div');
+    table.className = 'table-wrap';
+    table.appendChild(createTable(['Patient', 'Doctor', 'Date', 'Diagnosis', 'Notes', 'Prescription'], rows));
+    listEl.appendChild(table);
+  };
+
+  try {
+    consultations = await api.listConsultations();
+    renderList('');
+  } catch (err) {
+    const listEl = document.getElementById('conList');
+    listEl.innerHTML = '';
+    listEl.appendChild(errorBanner('Could not load consultations — ' + err.message, async () => {
+      try {
+        consultations = await api.listConsultations();
+        renderList(document.getElementById('conSearch').value.trim());
+      } catch (err2) { showToast(err2.message, 'error'); }
+    }));
+  }
+  document.getElementById('conSearch').addEventListener('input', debounce((e) => renderList(e.target.value.trim()), 250));
+}
+
+
+// ── Admin: Staff Management ──
+const STAFF_ROLES = ['admin', 'doctor', 'receptionist', 'pharmacist', 'billing', 'management'];
+const ROLE_META = {
+  admin: { label: 'Admin', cls: 'badge-purple' },
+  doctor: { label: 'Doctor', cls: 'badge-blue' },
+  receptionist: { label: 'Receptionist', cls: 'badge-green' },
+  pharmacist: { label: 'Pharmacist', cls: 'badge-orange' },
+  billing: { label: 'Billing', cls: 'badge-teal' },
+  management: { label: 'Management', cls: 'badge-gray' },
+};
+function roleBadge(role) {
+  const meta = ROLE_META[role] || { label: role || '—', cls: 'badge-gray' };
+  return `<span class="badge ${meta.cls}">${meta.label}</span>`;
+}
+function staffRoleLabel(role) { return role ? role.charAt(0).toUpperCase() + role.slice(1) : '—'; }
+
+async function renderStaffView() {
+  content.innerHTML = `
+    <div class="section-head">
+      <div><h3>Staff Management</h3><div class="sub">Users with dashboard access and their roles</div></div>
+      <button class="btn btn-primary btn-sm" id="addStaffBtn">＋ Add Staff</button>
+    </div>
+    <div id="staffList">${skeletonTable(6)}</div>
+  `;
+
+  let staff = [];
+
+  const renderList = () => {
+    const listEl = document.getElementById('staffList');
+    listEl.innerHTML = '';
+    if (!staff.length) {
+      listEl.innerHTML = emptyState('👥', 'No staff yet', 'Add a staff member to give them dashboard access.');
+      return;
+    }
+    const rows = staff.map(s => {
+      const isSelf = Number(s.id) === Number(user.id);
+      const btns = [`<button class="btn btn-secondary btn-sm st-edit" data-id="${s.id}" data-name="${esc(s.name)}">Edit</button>`];
+      if (isSelf) {
+        btns.push('<span class="badge badge-blue">You</span>');
+      } else if (s.status === 'active') {
+        btns.push(`<button class="btn btn-danger btn-sm st-deact" data-id="${s.id}" data-name="${esc(s.name)}">Deactivate</button>`);
+      } else {
+        btns.push(`<button class="btn btn-success btn-sm st-reactivate" data-id="${s.id}" data-name="${esc(s.name)}">Reactivate</button>`);
+      }
+      return {
+        cells: [
+          `<strong>${esc(s.name)}</strong>`,
+          esc(s.username),
+          roleBadge(s.role),
+          esc(s.phone || '—'),
+          esc(s.email || '—'),
+          statusBadge(s.status),
+          `<div class="flex gap-1">${btns.join('')}</div>`,
+        ],
+      };
+    });
+    const table = document.createElement('div');
+    table.className = 'table-wrap';
+    table.appendChild(createTable(['Name', 'Username', 'Role', 'Phone', 'Email', 'Status', 'Actions'], rows));
+    listEl.appendChild(table);
+  };
+
+  const load = async () => {
+    const listEl = document.getElementById('staffList');
+    try {
+      staff = await api.listStaff();
+      renderList();
+    } catch (err) {
+      listEl.innerHTML = '';
+      listEl.appendChild(errorBanner('Could not load staff — ' + err.message, load));
+    }
+  };
+
+  document.getElementById('addStaffBtn').addEventListener('click', () => {
+    const form = document.createElement('form');
+    form.innerHTML = `
+      <div class="form-row">
+        ${createFormField('Full Name', 'name', 'text', { required: true, placeholder: 'Staff member name' }).outerHTML}
+        ${createFormField('Username', 'username', 'text', { required: true, placeholder: 'login username' }).outerHTML}
+      </div>
+      <div class="form-row">
+        ${createFormField('Password', 'password', 'password', { required: true, placeholder: 'min 6 characters' }).outerHTML}
+        ${createFormField('Role', 'role', 'select', { required: true, options: STAFF_ROLES.map(r => ({ label: staffRoleLabel(r), value: r })) }).outerHTML}
+      </div>
+      <div class="form-row">
+        ${createFormField('Phone', 'phone', 'text', { placeholder: '03xx-xxxxxxx' }).outerHTML}
+        ${createFormField('Email', 'email', 'email', { placeholder: 'name@subhancare.pk' }).outerHTML}
+      </div>
+      <button type="submit" class="btn btn-primary mt-4 w-full">Create Staff Member</button>
+    `;
+    const modal = createModal('Add Staff', form);
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errEl = modal.body.querySelector('.form-error');
+      if (errEl) errEl.remove();
+      const btn = form.querySelector('button[type="submit"]');
+      btn.disabled = true; btn.textContent = 'Creating…';
+      try {
+        await api.createStaff({
+          name: form.name.value.trim(),
+          username: form.username.value.trim(),
+          password: form.password.value,
+          role: form.role.value,
+          phone: form.phone.value.trim(),
+          email: form.email.value.trim(),
+        });
+        modal.close();
+        showToast('Staff member created', 'success');
+        await load();
+      } catch (err) {
+        btn.disabled = false; btn.textContent = 'Create Staff Member';
+        let errEl = modal.body.querySelector('.form-error');
+        if (!errEl) {
+          errEl = document.createElement('div');
+          errEl.className = 'form-error';
+          modal.body.insertBefore(errEl, modal.body.firstChild);
+        }
+        errEl.textContent = err.message;
+      }
+    });
+  });
+
+  document.getElementById('staffList').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    const id = btn.dataset.id;
+    if (btn.classList.contains('st-edit')) {
+      const s = staff.find(x => Number(x.id) === Number(id));
+      if (s) openEditStaffModal(s, load);
+    }
+    if (btn.classList.contains('st-deact')) {
+      const ok = await showConfirm(`Deactivate ${btn.dataset.name}? They will no longer be able to log in.`);
+      if (!ok) return;
+      try {
+        await api.deactivateStaff(id);
+        showToast(`${btn.dataset.name} deactivated`, 'info');
+        await load();
+      } catch (err) { showToast(err.message, 'error'); }
+    }
+    if (btn.classList.contains('st-reactivate')) {
+      try {
+        await api.updateStaff(id, { status: 'active' });
+        showToast(`${btn.dataset.name} reactivated`, 'success');
+        await load();
+      } catch (err) { showToast(err.message, 'error'); }
+    }
+  });
+
+  await load();
+}
+
+function openEditStaffModal(s, reload) {
+  const isSelf = Number(s.id) === Number(user.id);
+  const form = document.createElement('form');
+  form.innerHTML = `
+    <div class="form-row">
+      ${createFormField('Full Name', 'name', 'text', { required: true, value: s.name }).outerHTML}
+      ${createFormField('Phone', 'phone', 'text', { value: s.phone || '' }).outerHTML}
+    </div>
+    <div class="form-row">
+      ${createFormField('Email', 'email', 'email', { value: s.email || '' }).outerHTML}
+      ${createFormField('Role', 'role', 'select', { options: STAFF_ROLES.map(r => ({ label: staffRoleLabel(r), value: r })) }).outerHTML}
+    </div>
+    <div class="form-row">
+      ${createFormField('Status', 'status', 'select', { options: [{ label: 'Active', value: 'active' }, { label: 'Inactive', value: 'inactive' }] }).outerHTML}
+    </div>
+    ${isSelf ? '<p class="text-muted" style="font-size:0.78rem;margin-top:4px">⚠️ You cannot change your own role or status.</p>' : ''}
+    <button type="submit" class="btn btn-primary mt-4 w-full">Save Changes</button>
+  `;
+  const modal = createModal(`Edit Staff — ${esc(s.name)}`, form);
+  form.role.value = s.role;
+  form.status.value = s.status || 'active';
+  if (isSelf) { form.role.disabled = true; form.status.disabled = true; }
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errEl = modal.body.querySelector('.form-error');
+    if (errEl) errEl.remove();
+    const btn = form.querySelector('button[type="submit"]');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      await api.updateStaff(s.id, {
+        name: form.name.value.trim(),
+        phone: form.phone.value.trim(),
+        email: form.email.value.trim(),
+        role: form.role.value,
+        status: form.status.value,
+      });
+      modal.close();
+      showToast('Staff updated', 'success');
+      await reload();
+    } catch (err) {
+      btn.disabled = false; btn.textContent = 'Save Changes';
+      let errEl = modal.body.querySelector('.form-error');
+      if (!errEl) {
+        errEl = document.createElement('div');
+        errEl.className = 'form-error';
+        modal.body.insertBefore(errEl, modal.body.firstChild);
+      }
+      errEl.textContent = err.message;
+    }
+  });
+}
+
 // ── Admin + pharmacist: pharmacy ──
 async function renderPharmacyView() {
   content.innerHTML = `
