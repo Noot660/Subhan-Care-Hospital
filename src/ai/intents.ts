@@ -33,6 +33,16 @@ export interface ReceptionistResponse {
   conversation_active: boolean;
 }
 
+// ── AI event logging ──
+// Records completed AI actions to ai_events for admin analytics / ops feed.
+function recordAiEvent(sessionId: string, channel: string, eventType: string, details: Record<string, unknown> = {}): void {
+  const db = getDb();
+  db.run(
+    `INSERT INTO ai_events (session_id, channel, event_type, details) VALUES (?, ?, ?, ?)`,
+    [sessionId || null, channel || 'staff', eventType, JSON.stringify(details)]
+  );
+}
+
 // ── Helpers ──
 
 function isAffirmative(text: string): boolean {
@@ -316,6 +326,8 @@ async function continueRegistration(
            collected.cnic, collected.phone.replace(/[-\s]/g, ''), collected.address,
            collected.emergency_contact.replace(/[-\s]/g, ''), now, now]
         );
+
+        recordAiEvent(state.sessionId, channel, 'patient_created', { patient_id: patientId, full_name: collected.full_name });
 
         clearSession(state.sessionId);
         return {
@@ -839,6 +851,14 @@ async function continueBooking(
           [patientId, doctorId, date, startTime, endTime, source, now, now]
         );
 
+        recordAiEvent(state.sessionId, channel, 'appointment_created', {
+          appointment_id: result.lastInsertRowid,
+          doctor_name: collected.doctor_name,
+          date,
+          time: startTime,
+          patient_name: collected.patient_name || '',
+        });
+
         clearSession(state.sessionId);
 
         return {
@@ -943,6 +963,7 @@ async function continueCheckAppointment(
        ORDER BY a.date DESC, a.start_time ASC LIMIT 20`
     ).all(patient.id) as Array<Appointment & { doctor_name: string; doctor_specialization: string }>;
 
+    recordAiEvent(state.sessionId, channel, 'appointments_list', { patient_id: patient.patient_id, count: appointments.length });
     clearSession(state.sessionId);
 
     if (appointments.length === 0) {
@@ -981,6 +1002,7 @@ function handleFAQ(
   channel: string
 ): Promise<ReceptionistResponse> {
   const faq = findFAQ(message);
+  recordAiEvent(state.sessionId, channel, 'faq', { topic: faq ? faq.topic : 'general' });
   clearSession(state.sessionId);
 
   return Promise.resolve({
@@ -1010,6 +1032,7 @@ function startTriage(
   const isEmergency = emergencyKeywords.some(kw => lower.includes(kw));
 
   if (isEmergency) {
+    recordAiEvent(state.sessionId, channel, 'triage', { symptom, outcome: 'emergency' });
     clearSession(state.sessionId);
     return Promise.resolve({
       reply: t('triage_emergency', lang),
@@ -1051,6 +1074,7 @@ async function continueTriage(
     const severity = severityMatch ? parseInt(severityMatch[1]) : 5;
 
     if (severity >= 8) {
+      recordAiEvent(state.sessionId, channel, 'triage', { symptom: collected.symptom, severity, outcome: 'emergency' });
       clearSession(state.sessionId);
       return {
         reply: t('triage_emergency', lang),
@@ -1093,6 +1117,7 @@ async function continueTriage(
         : 'Please see a doctor for a proper checkup.';
 
       const disclaimer = t('triage_disclaimer', lang);
+      recordAiEvent(state.sessionId, channel, 'triage', { symptom: collected.symptom, severity, outcome: 'see_doctor' });
       return {
         reply: t('triage_recommend_doctor', lang, { specialty_info: specialtyInfo }) + '\n\n' + disclaimer,
         session_id: state.sessionId,
@@ -1102,6 +1127,7 @@ async function continueTriage(
       };
     } else {
       const disclaimer = t('triage_disclaimer', lang);
+      recordAiEvent(state.sessionId, channel, 'triage', { symptom: collected.symptom, severity, outcome: 'self_care' });
       return {
         reply: t('triage_recommend_rest', lang) + '\n\n' + disclaimer,
         session_id: state.sessionId,
@@ -1293,6 +1319,7 @@ async function continueCancelReschedule(
 
       db.run("UPDATE appointments SET status = 'cancelled', cancellation_reason = 'Cancelled by patient via AI receptionist', updated_at = ? WHERE id = ?", [now, apptId]);
 
+      recordAiEvent(state.sessionId, channel, 'appointment_cancelled', { appointment_id: apptId, patient_name: collected.patient_name || '' });
       clearSession(state.sessionId);
 
       return {
@@ -1450,6 +1477,7 @@ async function continueCancelReschedule(
         [newDate, newTime, endTime, now, apptId]
       );
 
+      recordAiEvent(state.sessionId, channel, 'appointment_rescheduled', { appointment_id: apptId, new_date: newDate, new_time: newTime });
       clearSession(state.sessionId);
 
       return {

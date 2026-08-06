@@ -204,6 +204,15 @@ function initSchema(database: Database): void {
       details TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS ai_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT,
+      channel TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      details TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   // ── Migrations (safe for pre-existing databases) ──
