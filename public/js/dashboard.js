@@ -177,7 +177,7 @@ const navTitles = {
 function sectionKey(hash, role) {
   const h = hash || '#/dashboard/' + role;
   const parts = h.replace('#/dashboard/', '').split('/');
-  const section = parts[0] || 'overview';
+  const section = parts[1] || parts[0] || 'overview';
   const id = (role === 'receptionist' && section === 'register') ? 'register'
     : (role === 'receptionist' && section === 'book') ? 'book'
     : (role === 'receptionist' && section === 'patients') ? 'patients'
