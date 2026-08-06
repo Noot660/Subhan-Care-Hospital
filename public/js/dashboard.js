@@ -686,11 +686,17 @@ async function renderAppointmentsView() {
 
   const renderList = async (filterKey) => {
     const listEl = document.getElementById('aList');
+    listEl.innerHTML = skeletonTable(6);
     let data;
-    if (filterKey === todayStr()) data = await fetchAppointments({ date: filterKey });
-    else if (filterKey) data = await fetchAppointments({ status: filterKey });
-    else data = await fetchAppointments({});
-    listEl.innerHTML = '';
+    try {
+      if (filterKey === todayStr()) data = await fetchAppointments({ date: filterKey });
+      else if (filterKey) data = await fetchAppointments({ status: filterKey });
+      else data = await fetchAppointments({});
+    } catch (err) {
+      listEl.innerHTML = '';
+      listEl.appendChild(errorBanner('Could not load appointments — ' + err.message, () => renderList(filterKey)));
+      return;
+    }
     if (!data.length) {
       listEl.innerHTML = emptyState('📅', 'No appointments', filterKey === todayStr() ? 'Nothing scheduled for today yet.' : 'No appointments match this filter.');
       return;
@@ -780,6 +786,35 @@ function errorBanner(message, onRetry) {
     el.appendChild(btn);
   }
   return el;
+}
+
+
+// Modal replacement for window.prompt — resolves string|null (null = cancelled)
+function promptModal(title, message, defaultValue = '', opts = {}) {
+  return new Promise((resolve) => {
+    const form = document.createElement('form');
+    form.innerHTML = `
+      <p class="text-muted" style="margin-bottom:10px">${esc(message)}</p>
+      <div class="form-field">
+        <input type="number" id="promptInput" value="${esc(defaultValue)}" min="${opts.min ?? ''}" step="any" autocomplete="off">
+      </div>
+      <div class="flex gap-2 mt-4">
+        <button type="submit" class="btn btn-primary">OK</button>
+        <button type="button" class="btn btn-secondary" id="promptCancel">Cancel</button>
+      </div>
+    `;
+    const modal = createModal(title, form);
+    const input = form.querySelector('#promptInput');
+    input.focus();
+    input.select();
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const v = input.value.trim();
+      modal.close();
+      resolve(v);
+    });
+    form.querySelector('#promptCancel').addEventListener('click', () => { modal.close(); resolve(null); });
+  });
 }
 
 // ── Admin: AI Operations (live KPI strip + activity feed) ──
@@ -1292,7 +1327,7 @@ async function renderPharmacyView() {
   document.getElementById('medList').addEventListener('click', async (e) => {
     const btn = e.target.closest('.rs-btn');
     if (!btn) return;
-    const qty = prompt(`Restock ${btn.dataset.name} — quantity to add:`);
+    const qty = await promptModal('Restock Medicine', `Quantity to add for ${btn.dataset.name}:`, '', { min: 1 });
     if (!qty || isNaN(qty) || Number(qty) <= 0) return;
     try {
       await api.restockMedicine(btn.dataset.id, Number(qty));
@@ -1355,7 +1390,7 @@ async function renderBillingView() {
     listEl.addEventListener('click', async (e) => {
       const btn = e.target.closest('.pay-btn');
       if (!btn) return;
-      const amt = prompt(`Enter payment amount (max ${btn.dataset.amt}):`, btn.dataset.amt);
+      const amt = await promptModal('Record Payment', `Enter payment amount (max ${formatRs(btn.dataset.amt)}):`, btn.dataset.amt, { min: 1 });
       if (!amt || isNaN(amt) || Number(amt) <= 0) return;
       try {
         const res = await api.payInvoice(btn.dataset.id, Number(amt), 'cash');
@@ -1992,7 +2027,7 @@ async function renderPharmacistInventory() {
   document.getElementById('invList').addEventListener('click', async (e) => {
     const btn = e.target.closest('.rs-btn');
     if (!btn) return;
-    const qty = prompt(`Restock ${btn.dataset.name} — quantity to add:`);
+    const qty = await promptModal('Restock Medicine', `Quantity to add for ${btn.dataset.name}:`, '', { min: 1 });
     if (!qty || isNaN(qty) || Number(qty) <= 0) return;
     try {
       await api.restockMedicine(btn.dataset.id, Number(qty));
@@ -2030,7 +2065,7 @@ async function renderPharmacistLowStock() {
   listEl.addEventListener('click', async (e) => {
     const btn = e.target.closest('.rs-btn');
     if (!btn) return;
-    const qty = prompt(`Restock ${btn.dataset.name} — quantity to add:`);
+    const qty = await promptModal('Restock Medicine', `Quantity to add for ${btn.dataset.name}:`, '', { min: 1 });
     if (!qty || isNaN(qty) || Number(qty) <= 0) return;
     try {
       await api.restockMedicine(btn.dataset.id, Number(qty));
@@ -2095,7 +2130,7 @@ async function renderBillingInvoices() {
   document.getElementById('invList').addEventListener('click', async (e) => {
     const btn = e.target.closest('.pay-btn');
     if (!btn) return;
-    const amt = prompt(`Enter payment amount (max ${btn.dataset.amt}):`, btn.dataset.amt);
+    const amt = await promptModal('Record Payment', `Enter payment amount (max ${formatRs(btn.dataset.amt)}):`, btn.dataset.amt, { min: 1 });
     if (!amt || isNaN(amt) || Number(amt) <= 0) return;
     try {
       const res = await api.payInvoice(btn.dataset.id, Number(amt), 'cash');
