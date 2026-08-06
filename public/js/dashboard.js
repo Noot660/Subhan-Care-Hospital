@@ -105,6 +105,8 @@ const ICONS = {
   activity: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 12h4l2.5-6.5L14 18l2.5-6H21"/></svg>',
   heart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20.5s-8.5-5.3-8.5-11A5 5 0 0 1 12 6a5 5 0 0 1 8.5 3.5c0 5.7-8.5 11-8.5 11Z"/></svg>',
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>',
+  bot: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 4v4M8.5 13h.01M15.5 13h.01M9 17h6"/><path d="M2 12v4M22 12v4"/></svg>',
+  chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg>',
   logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>',
 };
 
@@ -115,6 +117,10 @@ const navConfig = {
     { id: 'patients', label: 'Patients', icon: 'users', hash: '#/dashboard/admin/patients' },
     { id: 'doctors', label: 'Doctors', icon: 'doctor', hash: '#/dashboard/admin/doctors' },
     { id: 'appointments', label: 'Appointments', icon: 'calendar', hash: '#/dashboard/admin/appointments' },
+    { id: 'aiops', label: 'AI Ops', icon: 'bot', hash: '#/dashboard/admin/aiops' },
+    { id: 'analytics', label: 'Analytics', icon: 'chart', hash: '#/dashboard/admin/analytics' },
+    { id: 'consultations', label: 'Consultations', icon: 'clipboard', hash: '#/dashboard/admin/consultations' },
+    { id: 'staff', label: 'Staff', icon: 'users', hash: '#/dashboard/admin/staff' },
     { id: 'pharmacy', label: 'Pharmacy', icon: 'pill', hash: '#/dashboard/admin/pharmacy' },
     { id: 'billing', label: 'Billing', icon: 'cash', hash: '#/dashboard/admin/billing' },
   ],
@@ -147,6 +153,10 @@ const navTitles = {
   'admin:patients': ['Patient Management', 'HMS / Patients'],
   'admin:doctors': ['Doctor Management', 'HMS / Doctors'],
   'admin:appointments': ['All Appointments', 'HMS / Appointments'],
+  'admin:aiops': ['AI Operations', 'HMS / AI Ops'],
+  'admin:analytics': ['Analytics', 'HMS / Analytics'],
+  'admin:consultations': ['Consultations', 'HMS / Consultations'],
+  'admin:staff': ['Staff Management', 'HMS / Staff'],
   'admin:pharmacy': ['Pharmacy', 'HMS / Pharmacy'],
   'admin:billing': ['Billing', 'HMS / Billing'],
   'receptionist:today': ["Today's Appointments", 'Reception / Today'],
@@ -175,6 +185,10 @@ function sectionKey(hash, role) {
     : (role === 'admin' && section === 'patients') ? 'patients'
     : (role === 'admin' && section === 'doctors') ? 'doctors'
     : (role === 'admin' && section === 'appointments') ? 'appointments'
+    : (role === 'admin' && section === 'aiops') ? 'aiops'
+    : (role === 'admin' && section === 'analytics') ? 'analytics'
+    : (role === 'admin' && section === 'consultations') ? 'consultations'
+    : (role === 'admin' && section === 'staff') ? 'staff'
     : (role === 'admin' && section === 'pharmacy') ? 'pharmacy'
     : (role === 'admin' && section === 'billing') ? 'billing'
     : (role === 'admin') ? 'overview'
@@ -260,6 +274,10 @@ const renderers = {
     patients: renderPatientsView,
     doctors: renderDoctorsView,
     appointments: renderAppointmentsView,
+    aiops: renderAiOpsView,
+    analytics: renderAnalyticsView,
+    consultations: renderConsultationsView,
+    staff: renderStaffView,
     pharmacy: renderPharmacyView,
     billing: renderBillingView,
   },
@@ -689,6 +707,184 @@ async function renderAppointmentsView() {
   await renderList('');
   startAutoRefresh(async () => { await renderList(document.querySelector('.chip.active')?.dataset.key || ''); markUpdated(); });
   wireApptActions(document.getElementById('aList'), { onChanged: renderAppointmentsView });
+}
+
+// ── Shared: AI event labels, relative time, error banner ──
+const EVENT_LABELS = {
+  appointment_created: 'Appointment booked',
+  patient_created: 'Patient registered',
+  faq: 'FAQ answered',
+  triage: 'Triage',
+  appointment_cancelled: 'Appointment cancelled',
+  appointment_rescheduled: 'Appointment rescheduled',
+  appointments_list: 'Appointment check',
+};
+const EVENT_ICONS = {
+  appointment_created: '📅',
+  patient_created: '🪪',
+  faq: '💬',
+  triage: '🩺',
+  appointment_cancelled: '❌',
+  appointment_rescheduled: '🔁',
+  appointments_list: '📋',
+};
+
+function eventDetailsText(ev) {
+  const d = ev.details || {};
+  switch (ev.event_type) {
+    case 'appointment_created':
+      return `${d.patient_name || 'Patient'} → ${d.doctor_name || 'doctor'} · ${d.date || ''} at ${d.time || ''}`;
+    case 'patient_created':
+      return `${d.full_name || 'Patient'} (${d.patient_id || ''})`;
+    case 'faq':
+      return `Topic: ${d.topic || 'general'}`;
+    case 'triage': {
+      const parts = [d.symptom, d.severity ? `severity ${d.severity}/10` : '', d.outcome].filter(Boolean);
+      return parts.join(' — ') || '—';
+    }
+    case 'appointments_list':
+      return `${d.count || 0} appointment(s) for patient ${d.patient_id || ''}`;
+    default:
+      try { return JSON.stringify(d); } catch { return ''; }
+  }
+}
+
+function relTime(value) {
+  const str = String(value || '');
+  const iso = str.includes('T') ? str : str.replace(' ', 'T') + 'Z';
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return '—';
+  const mins = Math.floor((Date.now() - t) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+// Inline error banner with a Retry button (dark-theme styled, see dashboard.css)
+function errorBanner(message, onRetry) {
+  const el = document.createElement('div');
+  el.className = 'error-banner';
+  const text = document.createElement('span');
+  text.textContent = message;
+  el.appendChild(text);
+  if (onRetry) {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-secondary btn-sm';
+    btn.textContent = 'Retry';
+    btn.addEventListener('click', async () => {
+      btn.disabled = true; btn.textContent = '…';
+      try { await onRetry(); } finally { btn.disabled = false; btn.textContent = 'Retry'; }
+    });
+    el.appendChild(btn);
+  }
+  return el;
+}
+
+// ── Admin: AI Operations (live KPI strip + activity feed) ──
+async function renderAiOpsView() {
+  content.innerHTML = `
+    <div class="section-head">
+      <div><h3>AI Operations</h3><div class="sub">Live activity from the AI receptionist · refreshes automatically</div></div>
+      <span class="updated-indicator" style="position:static" id="aiOpsLive"><span class="dot"></span> Live</span>
+    </div>
+    <div id="aiKpis">${skeletonCards(6)}</div>
+    <div class="section-head" style="margin-top:18px">
+      <div><h3>Recent Activity</h3></div>
+      <div class="filter-chips" id="aiChannelChips">
+        <button class="chip active" data-key="">All</button>
+        <button class="chip" data-key="chat">💬 Chat</button>
+        <button class="chip" data-key="voice">📞 Voice</button>
+        <button class="chip" data-key="twilio">📞 Twilio</button>
+      </div>
+    </div>
+    <div id="aiFeed">${skeletonTable(6)}</div>
+  `;
+
+  const kpiEl = document.getElementById('aiKpis');
+  const feedEl = document.getElementById('aiFeed');
+  const chips = document.getElementById('aiChannelChips');
+  let activeChannel = '';
+  let kpiLoaded = false;
+  let feedLoaded = false;
+
+  const renderKpis = async () => {
+    if (!kpiLoaded) kpiEl.innerHTML = skeletonCards(6);
+    try {
+      const o = await api.analyticsOverview('today');
+      const ch = o.ai_bookings_by_channel || {};
+      kpiEl.innerHTML = `
+        <div class="stats-grid">
+          <div class="stats-card"><div class="stats-icon" style="background:rgba(59,130,246,0.14);color:#93c5fd">🤖</div>
+            <div><span class="stats-value">${o.ai_booked ?? 0}</span><span class="stats-label">AI Bookings (Today)</span></div></div>
+          <div class="stats-card st-blue"><div class="stats-icon" style="background:rgba(59,130,246,0.14);color:#93c5fd">💬</div>
+            <div><span class="stats-value">${ch.chat ?? 0}</span><span class="stats-label">via Chat</span></div></div>
+          <div class="stats-card st-purple"><div class="stats-icon" style="background:rgba(167,139,250,0.14);color:#c4b5fd">📞</div>
+            <div><span class="stats-value">${ch.voice ?? 0}</span><span class="stats-label">via Voice</span></div></div>
+          <div class="stats-card st-teal"><div class="stats-icon" style="background:rgba(20,184,166,0.14);color:#5eead4">📞</div>
+            <div><span class="stats-value">${ch.twilio ?? 0}</span><span class="stats-label">via Twilio</span></div></div>
+          <div class="stats-card st-green"><div class="stats-icon" style="background:rgba(34,197,94,0.14);color:#86efac">🪪</div>
+            <div><span class="stats-value">${o.patients_registered_via_ai ?? 0}</span><span class="stats-label">Patients via AI</span></div></div>
+          <div class="stats-card st-amber"><div class="stats-icon" style="background:rgba(245,158,11,0.14);color:#fcd34d">🧵</div>
+            <div><span class="stats-value">${o.ai_sessions ?? 0}</span><span class="stats-label">AI Sessions</span></div></div>
+          <div class="stats-card st-purple"><div class="stats-icon" style="background:rgba(167,139,250,0.14);color:#c4b5fd">⚡</div>
+            <div><span class="stats-value">${o.ai_booking_conversion ?? 0}%</span><span class="stats-label">Booking Conversion</span></div></div>
+        </div>`;
+      kpiLoaded = true;
+    } catch (err) {
+      kpiEl.innerHTML = '';
+      kpiEl.appendChild(errorBanner('Could not load AI KPIs — ' + err.message, renderKpis));
+    }
+  };
+
+  const renderFeed = async () => {
+    if (!feedLoaded) feedEl.innerHTML = skeletonTable(5);
+    try {
+      const params = { limit: 30 };
+      if (activeChannel) params.channel = activeChannel;
+      const data = await api.aiEvents(params);
+      const events = data.events || [];
+      feedEl.innerHTML = '';
+      if (!events.length) {
+        feedEl.innerHTML = emptyState('🤖', 'No AI activity', activeChannel ? `No ${activeChannel} events recorded yet.` : 'The AI receptionist has not handled any interactions yet.');
+        feedLoaded = true;
+        return;
+      }
+      const wrap = document.createElement('div');
+      wrap.className = 'activity-feed';
+      wrap.innerHTML = events.map(ev => {
+        const meta = SOURCE_META[ev.channel] || { label: ev.channel || '—', cls: 'badge-gray' };
+        const label = EVENT_LABELS[ev.event_type] || ev.event_type.replace(/_/g, ' ');
+        return `
+          <div class="activity-item">
+            <div class="activity-icon">${EVENT_ICONS[ev.event_type] || '🤖'}</div>
+            <div class="activity-main">
+              <div class="activity-title"><span class="badge ${meta.cls}">${meta.label}</span> <strong>${esc(label)}</strong></div>
+              <div class="activity-sub">${esc(eventDetailsText(ev))}</div>
+            </div>
+            <span class="activity-time">${relTime(ev.created_at)}</span>
+          </div>`;
+      }).join('');
+      feedEl.appendChild(wrap);
+      feedLoaded = true;
+    } catch (err) {
+      feedEl.innerHTML = '';
+      feedEl.appendChild(errorBanner('Could not load AI activity — ' + err.message, renderFeed));
+    }
+  };
+
+  chips.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    chips.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    activeChannel = chip.dataset.key;
+    renderFeed();
+  });
+
+  await Promise.all([renderKpis(), renderFeed()]);
+  startAutoRefresh(async () => { await Promise.all([renderKpis(), renderFeed()]); markUpdated(); }, 25_000);
 }
 
 // ── Admin + pharmacist: pharmacy ──
