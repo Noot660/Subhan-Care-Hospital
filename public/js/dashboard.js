@@ -50,6 +50,22 @@ function cached(key, fetcher, force = false) {
   return p;
 }
 function invalidate(...keys) { keys.forEach((k) => cache.delete(k)); }
+// Invalidate every cached key starting with a prefix (e.g. 'appts' clears all appointment filters).
+function invalidatePrefix(prefix) {
+  [...cache.keys()].forEach(k => { if (k.startsWith(prefix)) cache.delete(k); });
+}
+
+// ── Appointment source badges ──
+const SOURCE_META = {
+  chat: { label: '💬 Chat', cls: 'badge-blue' },
+  voice: { label: '📞 Voice', cls: 'badge-purple' },
+  twilio: { label: '📞 Twilio', cls: 'badge-teal' },
+  staff: { label: '🏥 Staff', cls: 'badge-gray' },
+};
+function sourceBadge(source) {
+  const meta = SOURCE_META[source] || { label: (source || 'staff'), cls: 'badge-gray' };
+  return `<span class="badge ${meta.cls}">${meta.label}</span>`;
+}
 
 // ── "Updated just now" indicator ──
 let updatedTimer = null;
@@ -351,6 +367,7 @@ function apptRows(appointments, actions = {}) {
         esc(a.doctor_name || `Doctor #${a.doctor_id}`),
         a.start_time || '—',
         statusBadge(a.status),
+        sourceBadge(a.source),
         btns.length ? `<div class="flex gap-1">${btns.join('')}</div>` : '—',
       ],
     };
@@ -371,7 +388,7 @@ function wireApptActions(container, opts = {}) {
       if (!ok) return;
       try {
         await api.updateAppointmentStatus(id, 'cancelled');
-        invalidate('appts', 'appts:' + todayStr());
+        invalidatePrefix('appts');
         showToast('Appointment cancelled', 'info');
         if (opts.onChanged) opts.onChanged();
       } catch (err) { showToast(err.message, 'error'); }
@@ -398,7 +415,7 @@ async function optimisticStatus(btn, id, status, successMsg) {
   }
   try {
     await api.updateAppointmentStatus(id, status);
-    invalidate('appts', 'appts:' + todayStr());
+    invalidatePrefix('appts');
     showToast(successMsg, 'success');
     if (row) {
       setTimeout(() => {
@@ -450,11 +467,11 @@ async function renderAdminOverview() {
       </div>
     </div>
     <div class="table-wrap"><table class="data-table">
-      <thead><tr><th>Patient</th><th>Doctor</th><th>Time</th><th>Status</th></tr></thead>
+      <thead><tr><th>Patient</th><th>Doctor</th><th>Time</th><th>Status</th><th>Source</th></tr></thead>
       <tbody>${todayAppts.length ? todayAppts.slice(0, 6).map(a => `
         <tr><td><strong>${esc(a.patient_name)}</strong></td><td>${esc(a.doctor_name)}</td>
-        <td>${esc(a.start_time)}</td><td>${statusBadge(a.status)}</td></tr>`).join('')
-        : `<tr><td colspan="4" class="text-muted text-center">No appointments today</td></tr>`}
+        <td>${esc(a.start_time)}</td><td>${statusBadge(a.status)}</td><td>${sourceBadge(a.source)}</td></tr>`).join('')
+        : `<tr><td colspan="5" class="text-muted text-center">No appointments today</td></tr>`}
       </tbody>
     </table></div>
 
@@ -663,7 +680,7 @@ async function renderAppointmentsView() {
     const table = document.createElement('div');
     table.className = 'table-wrap';
     table.appendChild(createTable(
-      ['Patient', 'Doctor', 'Date', 'Time', 'Status', 'Actions'],
+      ['Patient', 'Doctor', 'Date', 'Time', 'Status', 'Source', 'Actions'],
       apptRows(data, { cancel: true }),
     ));
     listEl.appendChild(table);
@@ -900,7 +917,7 @@ async function renderTodayView() {
     const table = document.createElement('div');
     table.className = 'table-wrap';
     table.appendChild(createTable(
-      ['Patient', 'Doctor', 'Time', 'Status', 'Actions'],
+      ['Patient', 'Doctor', 'Time', 'Status', 'Source', 'Actions'],
       apptRows(appointments, { checkin: true, cancel: true }),
     ));
     listEl.appendChild(table);
@@ -1167,7 +1184,7 @@ async function renderBookAppointment() {
     bookSubmit.disabled = true;
     try {
       await api.createAppointment({ patient_id: Number(patientId), doctor_id: Number(doctorId), date, start_time: selectedTime });
-      invalidate('appts', 'appts:' + todayStr());
+      invalidatePrefix('appts');
       showToast('Appointment booked!', 'success');
       window.location.hash = '#/dashboard/receptionist';
     } catch (err) {
@@ -1221,7 +1238,7 @@ async function renderDoctorAppointments() {
     const table = document.createElement('div');
     table.className = 'table-wrap';
     table.appendChild(createTable(
-      ['Patient', 'Time', 'Status', 'Actions'],
+      ['Patient', 'Time', 'Status', 'Source', 'Actions'],
       apptRows(appointments, { checkin: true, consult: true }),
     ));
     listEl.appendChild(table);
@@ -1279,7 +1296,7 @@ function openConsultationModal(appointmentId, patientId, patientName) {
         vitals: form.vitals.value.trim() || '{}',
         prescription,
       });
-      invalidate('appts', 'appts:' + todayStr());
+      invalidatePrefix('appts');
       showToast('Consultation recorded!', 'success');
       modal.close();
       renderDoctorAppointments();

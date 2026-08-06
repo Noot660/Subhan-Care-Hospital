@@ -219,4 +219,44 @@ export const api = {
       body: JSON.stringify(data),
     });
   },
+
+  // Analytics (admin only)
+  analyticsOverview(period = '7d') {
+    return request(`/api/analytics/overview?period=${period}`);
+  },
+
+  aiEvents(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/api/analytics/ai-events${qs ? '?' + qs : ''}`);
+  },
+
+  channels(period = '7d') {
+    return request(`/api/analytics/channels?period=${period}`);
+  },
+
+  // Staff management (admin only)
+  listStaff() {
+    return request('/api/staff');
+  },
+
+  createStaff(data) {
+    return request('/api/staff', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  updateStaff(id, data) {
+    return request(`/api/staff/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  deactivateStaff(id) {
+    return request(`/api/staff/${id}/deactivate`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  },
 };
