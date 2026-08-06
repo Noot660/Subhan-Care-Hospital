@@ -33,6 +33,16 @@ export interface ReceptionistResponse {
   conversation_active: boolean;
 }
 
+// ── AI event logging ──
+// Records completed AI actions to ai_events for admin analytics / ops feed.
+function recordAiEvent(sessionId: string, channel: string, eventType: string, details: Record<string, unknown> = {}): void {
+  const db = getDb();
+  db.run(
+    `INSERT INTO ai_events (session_id, channel, event_type, details) VALUES (?, ?, ?, ?)`,
+    [sessionId || null, channel || 'staff', eventType, JSON.stringify(details)]
+  );
+}
+
 // ── Helpers ──
 
 function isAffirmative(text: string): boolean {
@@ -136,14 +146,15 @@ function findDoctor(query: string): Doctor | null {
 export async function handleMessage(
   message: string,
   sessionId: string | null | undefined,
-  preferredLang?: string
+  preferredLang?: string,
+  channel: string = 'staff'
 ): Promise<ReceptionistResponse> {
   const lang: Language = (preferredLang === 'ur' ? 'ur' : detectLanguage(message));
   let state = getOrCreateSession(sessionId);
 
   // If we have an active conversation flow, continue it
   if (state.intent !== 'unknown' && state.step !== 'init') {
-    return continueFlow(state, message, lang);
+    return continueFlow(state, message, lang, channel);
   }
 
   // Classify the intent
@@ -179,14 +190,15 @@ export async function handleMessage(
   }
 
   // Start a new flow
-  return startFlow(state, classified, message, lang);
+  return startFlow(state, classified, message, lang, channel);
 }
 
 async function startFlow(
   state: ConversationState,
   classified: ClassifiedIntent,
   message: string,
-  lang: Language
+  lang: Language,
+  channel: string
 ): Promise<ReceptionistResponse> {
   switch (classified.intent) {
     case 'register_patient':
@@ -196,9 +208,9 @@ async function startFlow(
     case 'check_appointment':
       return startCheckAppointment(state, classified, lang);
     case 'faq':
-      return handleFAQ(state, message, lang);
+      return handleFAQ(state, message, lang, channel);
     case 'triage':
-      return startTriage(state, classified, lang);
+      return startTriage(state, classified, lang, channel);
     case 'cancel_reschedule':
       return startCancelReschedule(state, classified, lang);
     default:
@@ -260,31 +272,33 @@ async function startRegistration(
 async function continueFlow(
   state: ConversationState,
   message: string,
-  lang: Language
+  lang: Language,
+  channel: string
 ): Promise<ReceptionistResponse> {
   switch (state.intent) {
     case 'register_patient':
-      return continueRegistration(state, message, lang);
+      return continueRegistration(state, message, lang, channel);
     case 'book_appointment':
-      return continueBooking(state, message, lang);
+      return continueBooking(state, message, lang, channel);
     case 'check_appointment':
-      return continueCheckAppointment(state, message, lang);
+      return continueCheckAppointment(state, message, lang, channel);
     case 'triage':
-      return continueTriage(state, message, lang);
+      return continueTriage(state, message, lang, channel);
     case 'cancel_reschedule':
-      return continueCancelReschedule(state, message, lang);
+      return continueCancelReschedule(state, message, lang, channel);
     default:
       // Restart classification
       clearSession(state.sessionId);
       const newState = getOrCreateSession(null);
-      return handleMessage(message, newState.sessionId, lang);
+      return handleMessage(message, newState.sessionId, lang, channel);
   }
 }
 
 async function continueRegistration(
   state: ConversationState,
   message: string,
-  lang: Language
+  lang: Language,
+  channel: string
 ): Promise<ReceptionistResponse> {
   const text = message.trim();
   const step = state.step;
@@ -312,6 +326,8 @@ async function continueRegistration(
            collected.cnic, collected.phone.replace(/[-\s]/g, ''), collected.address,
            collected.emergency_contact.replace(/[-\s]/g, ''), now, now]
         );
+
+        recordAiEvent(state.sessionId, channel, 'patient_created', { patient_id: patientId, full_name: collected.full_name });
 
         clearSession(state.sessionId);
         return {
@@ -371,7 +387,7 @@ async function continueRegistration(
 
   if (!field) {
     clearSession(state.sessionId);
-    return handleMessage(message, null, lang);
+    return handleMessage(message, null, lang, channel);
   }
 
   // Validate and store
@@ -435,7 +451,7 @@ async function continueRegistration(
   if (nextStepIdx >= REGISTRATION_STEPS.length) {
     // Shouldn't happen, but just in case
     clearSession(state.sessionId);
-    return handleMessage(message, null, lang);
+    return handleMessage(message, null, lang, channel);
   }
 
   const nextStep = REGISTRATION_STEPS[nextStepIdx];
@@ -507,7 +523,8 @@ async function startBooking(
 async function continueBooking(
   state: ConversationState,
   message: string,
-  lang: Language
+  lang: Language,
+  channel: string
 ): Promise<ReceptionistResponse> {
   const text = message.trim();
   const step = state.step;
@@ -826,11 +843,21 @@ async function continueBooking(
         }
 
         const now = new Date().toISOString();
+        // Map conversation channel to appointment booking source: chat→'chat', voice→'voice', twilio→'twilio'
+        const source: string = channel === 'chat' ? 'chat' : channel === 'twilio' ? 'twilio' : 'voice';
         const result = db.run(
-          `INSERT INTO appointments (patient_id, doctor_id, date, start_time, end_time, status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, 'scheduled', ?, ?)`,
-          [patientId, doctorId, date, startTime, endTime, now, now]
+          `INSERT INTO appointments (patient_id, doctor_id, date, start_time, end_time, status, source, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 'scheduled', ?, ?, ?)`,
+          [patientId, doctorId, date, startTime, endTime, source, now, now]
         );
+
+        recordAiEvent(state.sessionId, channel, 'appointment_created', {
+          appointment_id: result.lastInsertRowid,
+          doctor_name: collected.doctor_name,
+          date,
+          time: startTime,
+          patient_name: collected.patient_name || '',
+        });
 
         clearSession(state.sessionId);
 
@@ -881,7 +908,7 @@ async function continueBooking(
 
   // Shouldn't reach here
   clearSession(state.sessionId);
-  return handleMessage(message, null, lang);
+  return handleMessage(message, null, lang, channel);
 }
 
 // ── Check Appointment Flow ──
@@ -911,7 +938,8 @@ async function startCheckAppointment(
 async function continueCheckAppointment(
   state: ConversationState,
   message: string,
-  lang: Language
+  lang: Language,
+  channel: string
 ): Promise<ReceptionistResponse> {
   const text = message.trim();
 
@@ -935,6 +963,7 @@ async function continueCheckAppointment(
        ORDER BY a.date DESC, a.start_time ASC LIMIT 20`
     ).all(patient.id) as Array<Appointment & { doctor_name: string; doctor_specialization: string }>;
 
+    recordAiEvent(state.sessionId, channel, 'appointments_list', { patient_id: patient.patient_id, count: appointments.length });
     clearSession(state.sessionId);
 
     if (appointments.length === 0) {
@@ -961,7 +990,7 @@ async function continueCheckAppointment(
   }
 
   clearSession(state.sessionId);
-  return handleMessage(message, null, lang);
+  return handleMessage(message, null, lang, channel);
 }
 
 // ── FAQ Flow ──
@@ -969,9 +998,11 @@ async function continueCheckAppointment(
 function handleFAQ(
   state: ConversationState,
   message: string,
-  lang: Language
+  lang: Language,
+  channel: string
 ): Promise<ReceptionistResponse> {
   const faq = findFAQ(message);
+  recordAiEvent(state.sessionId, channel, 'faq', { topic: faq ? faq.topic : 'general' });
   clearSession(state.sessionId);
 
   return Promise.resolve({
@@ -988,7 +1019,8 @@ function handleFAQ(
 function startTriage(
   state: ConversationState,
   classified: ClassifiedIntent,
-  lang: Language
+  lang: Language,
+  channel: string
 ): Promise<ReceptionistResponse> {
   const symptom = classified.entities.symptom || 'symptoms';
 
@@ -1000,6 +1032,7 @@ function startTriage(
   const isEmergency = emergencyKeywords.some(kw => lower.includes(kw));
 
   if (isEmergency) {
+    recordAiEvent(state.sessionId, channel, 'triage', { symptom, outcome: 'emergency' });
     clearSession(state.sessionId);
     return Promise.resolve({
       reply: t('triage_emergency', lang),
@@ -1030,7 +1063,8 @@ function startTriage(
 async function continueTriage(
   state: ConversationState,
   message: string,
-  lang: Language
+  lang: Language,
+  channel: string
 ): Promise<ReceptionistResponse> {
   const text = message.trim();
   const collected = { ...state.collected };
@@ -1040,6 +1074,7 @@ async function continueTriage(
     const severity = severityMatch ? parseInt(severityMatch[1]) : 5;
 
     if (severity >= 8) {
+      recordAiEvent(state.sessionId, channel, 'triage', { symptom: collected.symptom, severity, outcome: 'emergency' });
       clearSession(state.sessionId);
       return {
         reply: t('triage_emergency', lang),
@@ -1082,6 +1117,7 @@ async function continueTriage(
         : 'Please see a doctor for a proper checkup.';
 
       const disclaimer = t('triage_disclaimer', lang);
+      recordAiEvent(state.sessionId, channel, 'triage', { symptom: collected.symptom, severity, outcome: 'see_doctor' });
       return {
         reply: t('triage_recommend_doctor', lang, { specialty_info: specialtyInfo }) + '\n\n' + disclaimer,
         session_id: state.sessionId,
@@ -1091,6 +1127,7 @@ async function continueTriage(
       };
     } else {
       const disclaimer = t('triage_disclaimer', lang);
+      recordAiEvent(state.sessionId, channel, 'triage', { symptom: collected.symptom, severity, outcome: 'self_care' });
       return {
         reply: t('triage_recommend_rest', lang) + '\n\n' + disclaimer,
         session_id: state.sessionId,
@@ -1102,7 +1139,7 @@ async function continueTriage(
   }
 
   clearSession(state.sessionId);
-  return handleMessage(message, null, lang);
+  return handleMessage(message, null, lang, channel);
 }
 
 // ── Cancel/Reschedule Flow ──
@@ -1136,7 +1173,8 @@ async function startCancelReschedule(
 async function continueCancelReschedule(
   state: ConversationState,
   message: string,
-  lang: Language
+  lang: Language,
+  channel: string
 ): Promise<ReceptionistResponse> {
   const text = message.trim();
   const collected = { ...state.collected };
@@ -1281,6 +1319,7 @@ async function continueCancelReschedule(
 
       db.run("UPDATE appointments SET status = 'cancelled', cancellation_reason = 'Cancelled by patient via AI receptionist', updated_at = ? WHERE id = ?", [now, apptId]);
 
+      recordAiEvent(state.sessionId, channel, 'appointment_cancelled', { appointment_id: apptId, patient_name: collected.patient_name || '' });
       clearSession(state.sessionId);
 
       return {
@@ -1438,6 +1477,7 @@ async function continueCancelReschedule(
         [newDate, newTime, endTime, now, apptId]
       );
 
+      recordAiEvent(state.sessionId, channel, 'appointment_rescheduled', { appointment_id: apptId, new_date: newDate, new_time: newTime });
       clearSession(state.sessionId);
 
       return {
@@ -1466,5 +1506,5 @@ async function continueCancelReschedule(
   }
 
   clearSession(state.sessionId);
-  return handleMessage(message, null, lang);
+  return handleMessage(message, null, lang, channel);
 }

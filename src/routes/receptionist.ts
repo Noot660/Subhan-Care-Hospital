@@ -30,7 +30,8 @@ async function handleChat(request: Request): Promise<Response> {
     const result = await handleMessage(
       body.message.trim(),
       body.session_id || null,
-      lang
+      lang,
+      'chat'
     );
 
     return json(result);
@@ -98,7 +99,8 @@ async function handleVoiceChat(request: Request): Promise<Response> {
     const result = await handleMessage(
       userMessage,
       body.session_id || null,
-      lang
+      lang,
+      'voice'
     );
 
     // Shorten the reply for spoken delivery: 1-2 sentences, under 200 chars

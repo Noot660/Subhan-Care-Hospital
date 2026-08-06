@@ -6,10 +6,12 @@ import type { Appointment } from "../types";
 
 async function handleCreateAppointment(request: Request): Promise<Response> {
   try {
-    const body = await parseBody<{ patient_id: number; doctor_id: number; date: string; start_time: string }>(request);
+    const body = await parseBody<{ patient_id: number; doctor_id: number; date: string; start_time: string; source?: string }>(request);
     if (!body.patient_id || !body.doctor_id || !body.date || !body.start_time) return error("Missing required fields: patient_id, doctor_id, date, start_time", 400);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(body.date)) return error("Invalid date format. Use YYYY-MM-DD", 400);
     if (!/^\d{2}:\d{2}$/.test(body.start_time)) return error("Invalid time format. Use HH:MM", 400);
+    const source = body.source || "staff";
+    if (!["staff", "chat", "voice", "twilio"].includes(source)) return error("Invalid source. Must be one of: staff, chat, voice, twilio", 400);
     const db = getDb();
     if (!db.query("SELECT * FROM patients WHERE id = ? AND status = 'active'").get(body.patient_id)) return error("Patient not found or inactive", 404);
     if (!db.query("SELECT * FROM doctors WHERE id = ? AND status = 'active'").get(body.doctor_id)) return error("Doctor not found or inactive", 404);
@@ -26,12 +28,12 @@ async function handleCreateAppointment(request: Request): Promise<Response> {
     }
     const now = new Date().toISOString();
     const result = db.run(
-      `INSERT INTO appointments (patient_id, doctor_id, date, start_time, end_time, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'scheduled', ?, ?)`,
-      [body.patient_id, body.doctor_id, body.date, body.start_time, endTime, now, now]
+      `INSERT INTO appointments (patient_id, doctor_id, date, start_time, end_time, status, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'scheduled', ?, ?, ?)`,
+      [body.patient_id, body.doctor_id, body.date, body.start_time, endTime, source, now, now]
     );
     const token = extractToken(request);
     const session = validateSession(token || "");
-    if (session) auditLog({ user_id: session.user_id, action: "create", entity_type: "appointment", entity_id: String(result.lastInsertRowid), details: { patient_id: body.patient_id, doctor_id: body.doctor_id, date: body.date, start_time: body.start_time } });
+    if (session) auditLog({ user_id: session.user_id, action: "create", entity_type: "appointment", entity_id: String(result.lastInsertRowid), details: { patient_id: body.patient_id, doctor_id: body.doctor_id, date: body.date, start_time: body.start_time, source } });
     return json(db.query("SELECT * FROM appointments WHERE id = ?").get(Number(result.lastInsertRowid)) as Appointment, 201);
   } catch (err) {
     return error(err instanceof Error ? err.message : "Bad request", 400);

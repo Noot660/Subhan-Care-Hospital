@@ -91,6 +91,7 @@ function initSchema(database: Database): void {
       end_time TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'scheduled' CHECK(status IN ('scheduled','checked-in','completed','no-show','cancelled')),
       cancellation_reason TEXT,
+      source TEXT NOT NULL DEFAULT 'staff' CHECK(source IN ('staff','chat','voice','twilio')),
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
       FOREIGN KEY (patient_id) REFERENCES patients(id),
@@ -203,7 +204,23 @@ function initSchema(database: Database): void {
       details TEXT NOT NULL DEFAULT '{}',
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS ai_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT,
+      channel TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      details TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
+
+  // ── Migrations (safe for pre-existing databases) ──
+  // M1: appointments.source — added later; existing DBs lack the column.
+  const appointmentCols = database.query("PRAGMA table_info(appointments)").all() as Array<{ name: string }>;
+  if (!appointmentCols.some((c) => c.name === "source")) {
+    database.exec("ALTER TABLE appointments ADD COLUMN source TEXT NOT NULL DEFAULT 'staff'");
+  }
 }
 
 export function closeDb(): void {
