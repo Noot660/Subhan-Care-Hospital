@@ -174,6 +174,14 @@ const RBAC_MATRIX: Record<string, Record<Role, "F" | "R" | "L" | "-">> = {
     billing: "-",
     management: "-",
   },
+  analytics: {
+    admin: "F",
+    doctor: "-",
+    receptionist: "-",
+    pharmacist: "-",
+    billing: "-",
+    management: "-",
+  },
 };
 
 // Map HTTP methods to required permission level
@@ -221,5 +229,6 @@ export function getModuleFromPath(pathname: string): string | null {
   if (pathname.startsWith("/api/reports")) return "reports";
   if (pathname.startsWith("/api/staff") || pathname.startsWith("/api/users")) return "users";
   if (pathname.startsWith("/api/audit")) return "audit";
+  if (pathname.startsWith("/api/analytics")) return "analytics";
   return null;
 }
