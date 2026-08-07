@@ -159,7 +159,10 @@ function applyLangUI() {
     const nl = notice.querySelector('#voiceNoticeLink');
     if (nt) nt.textContent = t.noSupportTitle;
     if (nb) nb.textContent = t.noSupportBody;
-    if (nl) nl.textContent = '💬 ' + t.noSupportLink;
+    if (nl) {
+      nl.textContent = '💬 ' + t.noSupportLink;
+      nl.setAttribute('aria-label', t.noSupportLink);
+    }
   }
   updateChips(currentState);
 }
