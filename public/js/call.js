@@ -5,6 +5,10 @@
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const TTS = !!window.speechSynthesis;
 const synth = TTS ? window.speechSynthesis : null;
+// Full voice calling needs BOTH speech recognition (mic input) and speech
+// synthesis (AI replies). If either is missing we degrade to text chat with a
+// friendly inline notice — never an uncaught error.
+const voiceSupported = !!(SR && synth);
 
 // ── State machine ──
 // idle → listening → thinking → speaking → (ready → ...) → idle
@@ -12,7 +16,12 @@ let callActive = false;
 let processing = false;
 let recogActive = false;
 let sessionId = null;
+// Language preference persists in localStorage so returning users land in
+// their chosen language (English / اردو) without re-selecting.
+const LANG_KEY = 'sca_lang';
 let lang = 'en';
+try { if (localStorage.getItem(LANG_KEY) === 'ur') lang = 'ur'; } catch (_) {}
+let currentState = 'idle';
 let autoMode = false;
 let textMode = false;
 let muted = false;
@@ -65,6 +74,99 @@ const langToggle = $('langToggle'), callTimer = $('callTimer');
 const muteBtn = $('muteBtn'), connectionDot = $('connectionDot');
 const audioBars = $('audioBars'), quickChips = $('quickChips'), speakerBtn = $('speakerBtn');
 
+// ── UI strings (language-aware) ──
+const UI = {
+  en: {
+    title: 'Voice Call — Subhan Care AI',
+    backText: '💬 Chat',
+    backAria: 'Switch to chat',
+    langAria: 'Switch language',
+    micAria: 'Tap to speak',
+    micTitle: 'Tap to speak',
+    muteAria: 'Mute',
+    unmuteAria: 'Unmute',
+    speakerOnAria: 'Speaker on',
+    speakerOffAria: 'Speaker off',
+    typeAria: 'Type instead',
+    endAria: 'End call',
+    endTitle: 'End call',
+    inputPlaceholder: 'Type your message...',
+    dotConnected: 'Connected',
+    dotProcessing: 'Processing...',
+    dotError: 'Connection error',
+    dotOffline: 'Offline',
+    paused: 'Call paused — return to tab',
+    noSupportTitle: "Voice calling isn't supported in this browser",
+    noSupportBody: 'This browser does not support the Web Speech API (microphone or speech). No problem — you can still talk to us by typing your message below.',
+    noSupportLink: 'Open Chat',
+  },
+  ur: {
+    title: 'Voice Call — Subhan Care AI',
+    backText: '💬 Chat',
+    backAria: 'Chat par jayein',
+    langAria: 'Zabaan badlein',
+    micAria: 'Bolne ke liye mic dabayein',
+    micTitle: 'Bolne ke liye mic dabayein',
+    muteAria: 'Mute karein',
+    unmuteAria: 'Unmute karein',
+    speakerOnAria: 'Speaker on',
+    speakerOffAria: 'Speaker off',
+    typeAria: 'Type karein',
+    endAria: 'Call khatam karein',
+    endTitle: 'Call khatam karein',
+    inputPlaceholder: 'Apna message yahan type karein...',
+    dotConnected: 'Connected',
+    dotProcessing: 'Processing...',
+    dotError: 'Rabita masla',
+    dotOffline: 'Offline',
+    paused: 'Call ruk gaya — tab par wapas aayein',
+    noSupportTitle: 'Is browser mein voice call supported nahi hai',
+    noSupportBody: 'Is browser mein Web Speech API maujood nahi hai. Koi baat nahi — aap neeche type karke bhi humse baat kar sakte hain.',
+    noSupportLink: 'Chat kholen',
+  },
+};
+
+function ui() { return lang === 'ur' ? UI.ur : UI.en; }
+
+// Apply language-aware chrome (labels, tooltips, aria, title) to the page.
+function applyLangUI() {
+  const t = ui();
+  document.documentElement.lang = lang;
+  document.title = t.title;
+  if (langToggle) {
+    langToggle.innerHTML = lang === 'en'
+      ? 'EN | <span class="lang-inactive">UR</span>'
+      : '<span class="lang-inactive">EN</span> | UR';
+    langToggle.setAttribute('aria-label', t.langAria);
+  }
+  const backLink = document.querySelector('.back-link');
+  if (backLink) {
+    backLink.textContent = t.backText;
+    backLink.setAttribute('aria-label', t.backAria);
+  }
+  micBtn.setAttribute('aria-label', t.micAria);
+  micBtn.title = t.micTitle;
+  muteBtn.setAttribute('aria-label', muted ? t.unmuteAria : t.muteAria);
+  speakerBtn.setAttribute('aria-label', speakerOn ? t.speakerOnAria : t.speakerOffAria);
+  typeBtn.setAttribute('aria-label', t.typeAria);
+  endBtn.setAttribute('aria-label', t.endAria);
+  endBtn.title = t.endTitle;
+  if (textInput) textInput.placeholder = t.inputPlaceholder;
+  const notice = document.getElementById('voiceNotice');
+  if (notice) {
+    const nt = notice.querySelector('#voiceNoticeTitle');
+    const nb = notice.querySelector('#voiceNoticeBody');
+    const nl = notice.querySelector('#voiceNoticeLink');
+    if (nt) nt.textContent = t.noSupportTitle;
+    if (nb) nb.textContent = t.noSupportBody;
+    if (nl) {
+      nl.textContent = '💬 ' + t.noSupportLink;
+      nl.setAttribute('aria-label', t.noSupportLink);
+    }
+  }
+  updateChips(currentState);
+}
+
 // ── Orb icons ──
 const ORB_ICONS = {
   idle: `<svg class="orb-mic-icon" viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -116,6 +218,7 @@ function setOrbState(state) {
 }
 
 function setStatus(state, custom) {
+  currentState = state;
   setOrbState(state);
   const texts = {
     idle:       { en: 'Tap the mic to speak', ur: 'Bolne ke liye mic dabayein' },
@@ -135,9 +238,14 @@ function setStatus(state, custom) {
   if (audioBars) audioBars.classList.toggle('active', state === 'listening' && !muted);
 }
 
+const CHIP_LABELS = {
+  en: { idle: ['Book appointment', 'Check timings', 'Register'], ready: ['Book appointment', 'Check timings', 'Register'], listening: ['Yes', 'No', 'Go back'] },
+  ur: { idle: ['Appointment book karein', 'Timings dekhein', 'Register karein'], ready: ['Appointment book karein', 'Timings dekhein', 'Register karein'], listening: ['Haan', 'Nahi', 'Wapas'] },
+};
+
 function updateChips(state) {
   if (!quickChips) return;
-  const options = { idle: ['Book appointment', 'Check timings', 'Register'], ready: ['Book appointment', 'Check timings', 'Register'], listening: ['Yes', 'No', 'Go back'] }[state] || [];
+  const options = (CHIP_LABELS[lang] || CHIP_LABELS.en)[state] || [];
   quickChips.innerHTML = options.map(text => `<button class="chip" type="button">${text}</button>`).join('');
   quickChips.querySelectorAll('.chip').forEach(chip => chip.addEventListener('click', () => {
     if (!callActive || processing) return;
@@ -149,8 +257,9 @@ function updateChips(state) {
 
 function setConnectionDot(state) {
   connectionDot.className = 'connection-dot ' + state;
-  const titles = { connected: 'Connected', processing: 'Processing...', error: 'Connection error', offline: 'Offline' };
-  connectionDot.title = titles[state] || 'Connected';
+  const t = ui();
+  const titles = { connected: t.dotConnected, processing: t.dotProcessing, error: t.dotError, offline: t.dotOffline };
+  connectionDot.title = titles[state] || t.dotConnected;
 }
 
 function showTranscript(who, text, interim) {
@@ -296,14 +405,30 @@ function startTimer() {
 function stopTimer() { clearInterval(timerInterval); timerInterval = null; }
 
 // ── TTS ──
+// Pick the best available voice for the active language.
+// Urdu: prefer ur-PK, then ur-IN, then any ur-*; if no Urdu voice exists at
+// all, return null so the browser falls back to its working default voice
+// (graceful — never silence/error, and the UI stays functional).
+// English: prefer Google en-US, then en-US, then any en-*.
 function getVoice() {
   if (!synth) return null;
-  const voices = synth.getVoices();
-  const t = lang === 'ur' ? 'ur' : 'en-US';
-  return voices.find(v => v.lang.startsWith(t) && v.name.includes('Google')) ||
-    voices.find(v => v.lang.startsWith(t)) ||
-    voices.find(v => v.lang.startsWith('en')) ||
-    voices[0] || null;
+  let voices = [];
+  try { voices = synth.getVoices() || []; } catch (_) { voices = []; }
+  if (!voices.length) return null;
+
+  const norm = v => (v.lang || '').toLowerCase().replace('_', '-');
+  const pick = (prefixes) => {
+    for (const prefix of prefixes) {
+      const group = voices.filter(v => norm(v).startsWith(prefix));
+      if (!group.length) continue;
+      return group.find(v => /google/i.test(v.name)) || group[0];
+    }
+    return null;
+  };
+
+  return lang === 'ur'
+    ? pick(['ur-pk', 'ur-in', 'ur'])   // spec order: ur-PK > ur-IN > any ur-*
+    : pick(['en-us', 'en-gb', 'en']);
 }
 
 function speak(text) {
@@ -785,7 +910,7 @@ async function startCall() {
   startTimer();
   setConnectionDot('connected');
 
-  if (!SR) { switchToText(); return; }
+  if (!voiceSupported) { switchToText(); return; }
 
   if (autoMode) {
     if (!recognition && !setupRecognition()) {
@@ -821,6 +946,7 @@ micBtn.addEventListener('click', handleMicTap);
 
 modeToggle.addEventListener('click', () => {
   if (!callActive) return;
+  if (textMode && !voiceSupported) return; // voice unsupported — stay in text mode
   if (textMode) {
     textMode = false;
     textFallback.style.display = 'none';
@@ -831,6 +957,7 @@ modeToggle.addEventListener('click', () => {
 
 typeBtn.addEventListener('click', () => {
   if (!callActive) return;
+  if (textMode && !voiceSupported) return; // voice unsupported — stay in text mode
   if (textMode) {
     // Exit text mode
     textMode = false;
@@ -874,9 +1001,8 @@ textInput.addEventListener('keydown', e => {
 
 langToggle.addEventListener('click', () => {
   lang = lang === 'en' ? 'ur' : 'en';
-  langToggle.innerHTML = lang === 'en'
-    ? 'EN | <span class="lang-inactive">UR</span>'
-    : '<span class="lang-inactive">EN</span> | UR';
+  try { localStorage.setItem(LANG_KEY, lang); } catch (_) {}
+  applyLangUI();
   stopRecognition();
   updateRecogLang();
   if (callActive && !processing) {
@@ -995,7 +1121,7 @@ document.addEventListener('visibilitychange', () => {
     clearSilenceTimer();
     if (synth) synth.cancel();
     currentUtterance = null;
-    setStatus('idle', 'Call paused — return to tab');
+    setStatus('idle', ui().paused);
   } else if (callActive) {
     // Resume
     if (muted) return;
@@ -1014,6 +1140,9 @@ document.addEventListener('visibilitychange', () => {
 // ── Init ──
 initTranscriptHistory();
 
+// Apply the persisted language preference to the whole page chrome.
+applyLangUI();
+
 // Set mobile browser chrome color to match dark theme
 const themeMeta = document.querySelector('meta[name="theme-color"]');
 if (themeMeta) {
@@ -1025,17 +1154,24 @@ if (themeMeta) {
   document.head.appendChild(meta);
 }
 
-if (!SR) {
-  setStatus('idle', lang === 'ur' ? 'Awaz support nahi — type karein' : 'Voice not supported — use text');
+if (!voiceSupported) {
+  // Web Speech API unavailable: explain clearly, offer text chat instead.
+  const notice = document.getElementById('voiceNotice');
+  if (notice) notice.hidden = false;
+  setStatus('idle', ui().noSupportTitle);
   switchToText();
+  micBtn.classList.add('disabled');
   callActive = true;
   startTimer();
 } else {
   setStatus('idle');
 }
 
-// Preload voices
+// Preload voices (voices load asynchronously in Chrome — re-read on
+// voiceschanged so speak() always sees the freshest list).
 if (synth) {
-  synth.getVoices();
-  synth.onvoiceschanged = () => synth.getVoices();
+  const refreshVoices = () => { try { synth.getVoices(); } catch (_) {} };
+  refreshVoices();
+  synth.onvoiceschanged = refreshVoices;
+  window.addEventListener('voiceschanged', refreshVoices);
 }
