@@ -6,7 +6,7 @@
 import { api } from './api.js';
 import { auth } from './auth.js';
 import {
-  createModal, createFormField, showToast, showConfirm,
+  createModal, createFormField, createTable, showToast, showConfirm,
   formatDate, statusBadge, formatRs,
 } from './components.js';
 
