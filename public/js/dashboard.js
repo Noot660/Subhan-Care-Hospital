@@ -50,6 +50,22 @@ function cached(key, fetcher, force = false) {
   return p;
 }
 function invalidate(...keys) { keys.forEach((k) => cache.delete(k)); }
+// Invalidate every cached key starting with a prefix (e.g. 'appts' clears all appointment filters).
+function invalidatePrefix(prefix) {
+  [...cache.keys()].forEach(k => { if (k.startsWith(prefix)) cache.delete(k); });
+}
+
+// ── Appointment source badges ──
+const SOURCE_META = {
+  chat: { label: '💬 Chat', cls: 'badge-blue' },
+  voice: { label: '📞 Voice', cls: 'badge-purple' },
+  twilio: { label: '📞 Twilio', cls: 'badge-teal' },
+  staff: { label: '🏥 Staff', cls: 'badge-gray' },
+};
+function sourceBadge(source) {
+  const meta = SOURCE_META[source] || { label: (source || 'staff'), cls: 'badge-gray' };
+  return `<span class="badge ${meta.cls}">${meta.label}</span>`;
+}
 
 // ── "Updated just now" indicator ──
 let updatedTimer = null;
@@ -89,6 +105,8 @@ const ICONS = {
   activity: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 12h4l2.5-6.5L14 18l2.5-6H21"/></svg>',
   heart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20.5s-8.5-5.3-8.5-11A5 5 0 0 1 12 6a5 5 0 0 1 8.5 3.5c0 5.7-8.5 11-8.5 11Z"/></svg>',
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>',
+  bot: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 4v4M8.5 13h.01M15.5 13h.01M9 17h6"/><path d="M2 12v4M22 12v4"/></svg>',
+  chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg>',
   logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>',
 };
 
@@ -99,6 +117,10 @@ const navConfig = {
     { id: 'patients', label: 'Patients', icon: 'users', hash: '#/dashboard/admin/patients' },
     { id: 'doctors', label: 'Doctors', icon: 'doctor', hash: '#/dashboard/admin/doctors' },
     { id: 'appointments', label: 'Appointments', icon: 'calendar', hash: '#/dashboard/admin/appointments' },
+    { id: 'aiops', label: 'AI Ops', icon: 'bot', hash: '#/dashboard/admin/aiops' },
+    { id: 'analytics', label: 'Analytics', icon: 'chart', hash: '#/dashboard/admin/analytics' },
+    { id: 'consultations', label: 'Consultations', icon: 'clipboard', hash: '#/dashboard/admin/consultations' },
+    { id: 'staff', label: 'Staff', icon: 'users', hash: '#/dashboard/admin/staff' },
     { id: 'pharmacy', label: 'Pharmacy', icon: 'pill', hash: '#/dashboard/admin/pharmacy' },
     { id: 'billing', label: 'Billing', icon: 'cash', hash: '#/dashboard/admin/billing' },
   ],
@@ -131,6 +153,10 @@ const navTitles = {
   'admin:patients': ['Patient Management', 'HMS / Patients'],
   'admin:doctors': ['Doctor Management', 'HMS / Doctors'],
   'admin:appointments': ['All Appointments', 'HMS / Appointments'],
+  'admin:aiops': ['AI Operations', 'HMS / AI Ops'],
+  'admin:analytics': ['Analytics', 'HMS / Analytics'],
+  'admin:consultations': ['Consultations', 'HMS / Consultations'],
+  'admin:staff': ['Staff Management', 'HMS / Staff'],
   'admin:pharmacy': ['Pharmacy', 'HMS / Pharmacy'],
   'admin:billing': ['Billing', 'HMS / Billing'],
   'receptionist:today': ["Today's Appointments", 'Reception / Today'],
@@ -151,7 +177,7 @@ const navTitles = {
 function sectionKey(hash, role) {
   const h = hash || '#/dashboard/' + role;
   const parts = h.replace('#/dashboard/', '').split('/');
-  const section = parts[0] || 'overview';
+  const section = parts[1] || parts[0] || 'overview';
   const id = (role === 'receptionist' && section === 'register') ? 'register'
     : (role === 'receptionist' && section === 'book') ? 'book'
     : (role === 'receptionist' && section === 'patients') ? 'patients'
@@ -159,6 +185,10 @@ function sectionKey(hash, role) {
     : (role === 'admin' && section === 'patients') ? 'patients'
     : (role === 'admin' && section === 'doctors') ? 'doctors'
     : (role === 'admin' && section === 'appointments') ? 'appointments'
+    : (role === 'admin' && section === 'aiops') ? 'aiops'
+    : (role === 'admin' && section === 'analytics') ? 'analytics'
+    : (role === 'admin' && section === 'consultations') ? 'consultations'
+    : (role === 'admin' && section === 'staff') ? 'staff'
     : (role === 'admin' && section === 'pharmacy') ? 'pharmacy'
     : (role === 'admin' && section === 'billing') ? 'billing'
     : (role === 'admin') ? 'overview'
@@ -244,6 +274,10 @@ const renderers = {
     patients: renderPatientsView,
     doctors: renderDoctorsView,
     appointments: renderAppointmentsView,
+    aiops: renderAiOpsView,
+    analytics: renderAnalyticsView,
+    consultations: renderConsultationsView,
+    staff: renderStaffView,
     pharmacy: renderPharmacyView,
     billing: renderBillingView,
   },
@@ -351,6 +385,7 @@ function apptRows(appointments, actions = {}) {
         esc(a.doctor_name || `Doctor #${a.doctor_id}`),
         a.start_time || '—',
         statusBadge(a.status),
+        sourceBadge(a.source),
         btns.length ? `<div class="flex gap-1">${btns.join('')}</div>` : '—',
       ],
     };
@@ -371,7 +406,7 @@ function wireApptActions(container, opts = {}) {
       if (!ok) return;
       try {
         await api.updateAppointmentStatus(id, 'cancelled');
-        invalidate('appts', 'appts:' + todayStr());
+        invalidatePrefix('appts');
         showToast('Appointment cancelled', 'info');
         if (opts.onChanged) opts.onChanged();
       } catch (err) { showToast(err.message, 'error'); }
@@ -398,7 +433,7 @@ async function optimisticStatus(btn, id, status, successMsg) {
   }
   try {
     await api.updateAppointmentStatus(id, status);
-    invalidate('appts', 'appts:' + todayStr());
+    invalidatePrefix('appts');
     showToast(successMsg, 'success');
     if (row) {
       setTimeout(() => {
@@ -450,11 +485,11 @@ async function renderAdminOverview() {
       </div>
     </div>
     <div class="table-wrap"><table class="data-table">
-      <thead><tr><th>Patient</th><th>Doctor</th><th>Time</th><th>Status</th></tr></thead>
+      <thead><tr><th>Patient</th><th>Doctor</th><th>Time</th><th>Status</th><th>Source</th></tr></thead>
       <tbody>${todayAppts.length ? todayAppts.slice(0, 6).map(a => `
         <tr><td><strong>${esc(a.patient_name)}</strong></td><td>${esc(a.doctor_name)}</td>
-        <td>${esc(a.start_time)}</td><td>${statusBadge(a.status)}</td></tr>`).join('')
-        : `<tr><td colspan="4" class="text-muted text-center">No appointments today</td></tr>`}
+        <td>${esc(a.start_time)}</td><td>${statusBadge(a.status)}</td><td>${sourceBadge(a.source)}</td></tr>`).join('')
+        : `<tr><td colspan="5" class="text-muted text-center">No appointments today</td></tr>`}
       </tbody>
     </table></div>
 
@@ -651,11 +686,17 @@ async function renderAppointmentsView() {
 
   const renderList = async (filterKey) => {
     const listEl = document.getElementById('aList');
+    listEl.innerHTML = skeletonTable(6);
     let data;
-    if (filterKey === todayStr()) data = await fetchAppointments({ date: filterKey });
-    else if (filterKey) data = await fetchAppointments({ status: filterKey });
-    else data = await fetchAppointments({});
-    listEl.innerHTML = '';
+    try {
+      if (filterKey === todayStr()) data = await fetchAppointments({ date: filterKey });
+      else if (filterKey) data = await fetchAppointments({ status: filterKey });
+      else data = await fetchAppointments({});
+    } catch (err) {
+      listEl.innerHTML = '';
+      listEl.appendChild(errorBanner('Could not load appointments — ' + err.message, () => renderList(filterKey)));
+      return;
+    }
     if (!data.length) {
       listEl.innerHTML = emptyState('📅', 'No appointments', filterKey === todayStr() ? 'Nothing scheduled for today yet.' : 'No appointments match this filter.');
       return;
@@ -663,7 +704,7 @@ async function renderAppointmentsView() {
     const table = document.createElement('div');
     table.className = 'table-wrap';
     table.appendChild(createTable(
-      ['Patient', 'Doctor', 'Date', 'Time', 'Status', 'Actions'],
+      ['Patient', 'Doctor', 'Date', 'Time', 'Status', 'Source', 'Actions'],
       apptRows(data, { cancel: true }),
     ));
     listEl.appendChild(table);
@@ -672,6 +713,579 @@ async function renderAppointmentsView() {
   await renderList('');
   startAutoRefresh(async () => { await renderList(document.querySelector('.chip.active')?.dataset.key || ''); markUpdated(); });
   wireApptActions(document.getElementById('aList'), { onChanged: renderAppointmentsView });
+}
+
+// ── Shared: AI event labels, relative time, error banner ──
+const EVENT_LABELS = {
+  appointment_created: 'Appointment booked',
+  patient_created: 'Patient registered',
+  faq: 'FAQ answered',
+  triage: 'Triage',
+  appointment_cancelled: 'Appointment cancelled',
+  appointment_rescheduled: 'Appointment rescheduled',
+  appointments_list: 'Appointment check',
+};
+const EVENT_ICONS = {
+  appointment_created: '📅',
+  patient_created: '🪪',
+  faq: '💬',
+  triage: '🩺',
+  appointment_cancelled: '❌',
+  appointment_rescheduled: '🔁',
+  appointments_list: '📋',
+};
+
+function eventDetailsText(ev) {
+  const d = ev.details || {};
+  switch (ev.event_type) {
+    case 'appointment_created':
+      return `${d.patient_name || 'Patient'} → ${d.doctor_name || 'doctor'} · ${d.date || ''} at ${d.time || ''}`;
+    case 'patient_created':
+      return `${d.full_name || 'Patient'} (${d.patient_id || ''})`;
+    case 'faq':
+      return `Topic: ${d.topic || 'general'}`;
+    case 'triage': {
+      const parts = [d.symptom, d.severity ? `severity ${d.severity}/10` : '', d.outcome].filter(Boolean);
+      return parts.join(' — ') || '—';
+    }
+    case 'appointments_list':
+      return `${d.count || 0} appointment(s) for patient ${d.patient_id || ''}`;
+    default:
+      try { return JSON.stringify(d); } catch { return ''; }
+  }
+}
+
+function relTime(value) {
+  const str = String(value || '');
+  const iso = str.includes('T') ? str : str.replace(' ', 'T') + 'Z';
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return '—';
+  const mins = Math.floor((Date.now() - t) / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+// Inline error banner with a Retry button (dark-theme styled, see dashboard.css)
+function errorBanner(message, onRetry) {
+  const el = document.createElement('div');
+  el.className = 'error-banner';
+  const text = document.createElement('span');
+  text.textContent = message;
+  el.appendChild(text);
+  if (onRetry) {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-secondary btn-sm';
+    btn.textContent = 'Retry';
+    btn.addEventListener('click', async () => {
+      btn.disabled = true; btn.textContent = '…';
+      try { await onRetry(); } finally { btn.disabled = false; btn.textContent = 'Retry'; }
+    });
+    el.appendChild(btn);
+  }
+  return el;
+}
+
+
+// Modal replacement for window.prompt — resolves string|null (null = cancelled)
+function promptModal(title, message, defaultValue = '', opts = {}) {
+  return new Promise((resolve) => {
+    const form = document.createElement('form');
+    form.innerHTML = `
+      <p class="text-muted" style="margin-bottom:10px">${esc(message)}</p>
+      <div class="form-field">
+        <input type="number" id="promptInput" value="${esc(defaultValue)}" min="${opts.min ?? ''}" step="any" autocomplete="off">
+      </div>
+      <div class="flex gap-2 mt-4">
+        <button type="submit" class="btn btn-primary">OK</button>
+        <button type="button" class="btn btn-secondary" id="promptCancel">Cancel</button>
+      </div>
+    `;
+    const modal = createModal(title, form);
+    const input = form.querySelector('#promptInput');
+    input.focus();
+    input.select();
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const v = input.value.trim();
+      modal.close();
+      resolve(v);
+    });
+    form.querySelector('#promptCancel').addEventListener('click', () => { modal.close(); resolve(null); });
+  });
+}
+
+// ── Admin: AI Operations (live KPI strip + activity feed) ──
+async function renderAiOpsView() {
+  content.innerHTML = `
+    <div class="section-head">
+      <div><h3>AI Operations</h3><div class="sub">Live activity from the AI receptionist · refreshes automatically</div></div>
+      <span class="updated-indicator" style="position:static" id="aiOpsLive"><span class="dot"></span> Live</span>
+    </div>
+    <div id="aiKpis">${skeletonCards(6)}</div>
+    <div class="section-head" style="margin-top:18px">
+      <div><h3>Recent Activity</h3></div>
+      <div class="filter-chips" id="aiChannelChips">
+        <button class="chip active" data-key="">All</button>
+        <button class="chip" data-key="chat">💬 Chat</button>
+        <button class="chip" data-key="voice">📞 Voice</button>
+        <button class="chip" data-key="twilio">📞 Twilio</button>
+      </div>
+    </div>
+    <div id="aiFeed">${skeletonTable(6)}</div>
+  `;
+
+  const kpiEl = document.getElementById('aiKpis');
+  const feedEl = document.getElementById('aiFeed');
+  const chips = document.getElementById('aiChannelChips');
+  let activeChannel = '';
+  let kpiLoaded = false;
+  let feedLoaded = false;
+
+  const renderKpis = async () => {
+    if (!kpiLoaded) kpiEl.innerHTML = skeletonCards(6);
+    try {
+      const o = await api.analyticsOverview('today');
+      const ch = o.ai_bookings_by_channel || {};
+      kpiEl.innerHTML = `
+        <div class="stats-grid">
+          <div class="stats-card"><div class="stats-icon" style="background:rgba(59,130,246,0.14);color:#93c5fd">🤖</div>
+            <div><span class="stats-value">${o.ai_booked ?? 0}</span><span class="stats-label">AI Bookings (Today)</span></div></div>
+          <div class="stats-card st-blue"><div class="stats-icon" style="background:rgba(59,130,246,0.14);color:#93c5fd">💬</div>
+            <div><span class="stats-value">${ch.chat ?? 0}</span><span class="stats-label">via Chat</span></div></div>
+          <div class="stats-card st-purple"><div class="stats-icon" style="background:rgba(167,139,250,0.14);color:#c4b5fd">📞</div>
+            <div><span class="stats-value">${ch.voice ?? 0}</span><span class="stats-label">via Voice</span></div></div>
+          <div class="stats-card st-teal"><div class="stats-icon" style="background:rgba(20,184,166,0.14);color:#5eead4">📞</div>
+            <div><span class="stats-value">${ch.twilio ?? 0}</span><span class="stats-label">via Twilio</span></div></div>
+          <div class="stats-card st-green"><div class="stats-icon" style="background:rgba(34,197,94,0.14);color:#86efac">🪪</div>
+            <div><span class="stats-value">${o.patients_registered_via_ai ?? 0}</span><span class="stats-label">Patients via AI</span></div></div>
+          <div class="stats-card st-amber"><div class="stats-icon" style="background:rgba(245,158,11,0.14);color:#fcd34d">🧵</div>
+            <div><span class="stats-value">${o.ai_sessions ?? 0}</span><span class="stats-label">AI Sessions</span></div></div>
+          <div class="stats-card st-purple"><div class="stats-icon" style="background:rgba(167,139,250,0.14);color:#c4b5fd">⚡</div>
+            <div><span class="stats-value">${o.ai_booking_conversion ?? 0}%</span><span class="stats-label">Booking Conversion</span></div></div>
+        </div>`;
+      kpiLoaded = true;
+    } catch (err) {
+      kpiEl.innerHTML = '';
+      kpiEl.appendChild(errorBanner('Could not load AI KPIs — ' + err.message, renderKpis));
+    }
+  };
+
+  const renderFeed = async () => {
+    if (!feedLoaded) feedEl.innerHTML = skeletonTable(5);
+    try {
+      const params = { limit: 30 };
+      if (activeChannel) params.channel = activeChannel;
+      const data = await api.aiEvents(params);
+      const events = data.events || [];
+      feedEl.innerHTML = '';
+      if (!events.length) {
+        feedEl.innerHTML = emptyState('🤖', 'No AI activity', activeChannel ? `No ${activeChannel} events recorded yet.` : 'The AI receptionist has not handled any interactions yet.');
+        feedLoaded = true;
+        return;
+      }
+      const wrap = document.createElement('div');
+      wrap.className = 'activity-feed';
+      wrap.innerHTML = events.map(ev => {
+        const meta = SOURCE_META[ev.channel] || { label: ev.channel || '—', cls: 'badge-gray' };
+        const label = EVENT_LABELS[ev.event_type] || ev.event_type.replace(/_/g, ' ');
+        return `
+          <div class="activity-item">
+            <div class="activity-icon">${EVENT_ICONS[ev.event_type] || '🤖'}</div>
+            <div class="activity-main">
+              <div class="activity-title"><span class="badge ${meta.cls}">${meta.label}</span> <strong>${esc(label)}</strong></div>
+              <div class="activity-sub">${esc(eventDetailsText(ev))}</div>
+            </div>
+            <span class="activity-time">${relTime(ev.created_at)}</span>
+          </div>`;
+      }).join('');
+      feedEl.appendChild(wrap);
+      feedLoaded = true;
+    } catch (err) {
+      feedEl.innerHTML = '';
+      feedEl.appendChild(errorBanner('Could not load AI activity — ' + err.message, renderFeed));
+    }
+  };
+
+  chips.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    chips.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    activeChannel = chip.dataset.key;
+    renderFeed();
+  });
+
+  await Promise.all([renderKpis(), renderFeed()]);
+  startAutoRefresh(async () => { await Promise.all([renderKpis(), renderFeed()]); markUpdated(); }, 25_000);
+}
+
+// ── Admin: Analytics (KPIs + channel breakdown, period selector) ──
+function fmtNum(n) { return Number(n || 0).toLocaleString('en-PK'); }
+
+const CHANNEL_META = {
+  staff: { label: '🏥 Staff', color: '#94a3b8' },
+  chat: { label: '💬 Chat', color: '#3b82f6' },
+  voice: { label: '📞 Voice', color: '#a78bfa' },
+  twilio: { label: '📞 Twilio', color: '#2dd4bf' },
+};
+
+async function renderAnalyticsView() {
+  content.innerHTML = `
+    <div class="section-head">
+      <div><h3>Analytics</h3><div class="sub">Appointments, AI adoption and booking channels</div></div>
+      <div class="filter-chips" id="analyticsPeriodChips">
+        <button class="chip" data-key="today">Today</button>
+        <button class="chip active" data-key="7d">7 days</button>
+        <button class="chip" data-key="30d">30 days</button>
+      </div>
+    </div>
+    <div id="analyticsKpis">${skeletonCards(6)}</div>
+    <div class="grid-2" style="margin-top:16px">
+      <div class="card"><div class="card-header"><h4>Appointment Sources</h4></div>
+        <div class="card-body" id="analyticsChannels">${skeletonCards(2)}</div></div>
+      <div class="card"><div class="card-header"><h4>AI Bookings by Channel</h4></div>
+        <div class="card-body" id="analyticsAiChannels">${skeletonCards(2)}</div></div>
+    </div>
+  `;
+
+  const chips = document.getElementById('analyticsPeriodChips');
+  let period = '7d';
+
+  const channelBars = (data, total) => {
+    return Object.entries(data).map(([src, count]) => {
+      const meta = CHANNEL_META[src] || { label: src, color: '#94a3b8' };
+      const n = Number(count) || 0;
+      const pct = total ? Math.round((n / total) * 100) : 0;
+      return `
+        <div class="channel-bar-row">
+          <span class="channel-bar-label">${meta.label}</span>
+          <div class="channel-bar-track"><div class="channel-bar-fill" style="width:${pct}%;background:${meta.color}"></div></div>
+          <span class="channel-bar-count">${fmtNum(n)}</span>
+        </div>`;
+    }).join('');
+  };
+
+  const render = async () => {
+    const kpiEl = document.getElementById('analyticsKpis');
+    const chEl = document.getElementById('analyticsChannels');
+    const aiChEl = document.getElementById('analyticsAiChannels');
+    kpiEl.innerHTML = skeletonCards(6);
+    chEl.innerHTML = skeletonCards(2);
+    aiChEl.innerHTML = skeletonCards(2);
+    try {
+      const [o, ch] = await Promise.all([
+        api.analyticsOverview(period),
+        api.channels(period),
+      ]);
+      const totalCh = Object.values(ch.channels || {}).reduce((s, v) => s + (Number(v) || 0), 0);
+      kpiEl.innerHTML = `
+        <div class="stats-grid">
+          <div class="stats-card"><div class="stats-icon" style="background:rgba(59,130,246,0.14);color:#93c5fd">📅</div>
+            <div><span class="stats-value">${fmtNum(o.total_appointments)}</span><span class="stats-label">Total Appointments</span></div></div>
+          <div class="stats-card st-purple"><div class="stats-icon" style="background:rgba(167,139,250,0.14);color:#c4b5fd">🤖</div>
+            <div><span class="stats-value">${fmtNum(o.ai_booked)}</span><span class="stats-label">AI-handled Bookings</span></div></div>
+          <div class="stats-card st-green"><div class="stats-icon" style="background:rgba(34,197,94,0.14);color:#86efac">⚡</div>
+            <div><span class="stats-value">${o.ai_booking_conversion ?? 0}%</span><span class="stats-label">AI Booking Conversion</span></div></div>
+          <div class="stats-card st-red"><div class="stats-icon" style="background:rgba(239,68,68,0.14);color:#fca5a5">❌</div>
+            <div><span class="stats-value">${fmtNum(o.cancellations)}</span><span class="stats-label">Cancellations</span></div></div>
+          <div class="stats-card st-blue"><div class="stats-icon" style="background:rgba(59,130,246,0.14);color:#93c5fd">💬</div>
+            <div><span class="stats-value">${fmtNum(o.faqs_answered)}</span><span class="stats-label">FAQs Answered</span></div></div>
+          <div class="stats-card st-amber"><div class="stats-icon" style="background:rgba(245,158,11,0.14);color:#fcd34d">🩺</div>
+            <div><span class="stats-value">${fmtNum(o.triage_count)}</span><span class="stats-label">Triages</span></div></div>
+        </div>`;
+      chEl.innerHTML = totalCh ? channelBars(ch.channels, totalCh) : '<p class="text-muted" style="font-size:0.85rem">No appointments in this period.</p>';
+      const aiCh = o.ai_bookings_by_channel || {};
+      const aiTotal = (aiCh.chat || 0) + (aiCh.voice || 0) + (aiCh.twilio || 0);
+      aiChEl.innerHTML = aiTotal ? channelBars(aiCh, aiTotal) : '<p class="text-muted" style="font-size:0.85rem">No AI bookings in this period yet.</p>';
+    } catch (err) {
+      kpiEl.innerHTML = '';
+      kpiEl.appendChild(errorBanner('Could not load analytics — ' + err.message, render));
+      chEl.innerHTML = '';
+      aiChEl.innerHTML = '';
+    }
+  };
+
+  chips.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    chips.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    period = chip.dataset.key;
+    render();
+  });
+
+  await render();
+}
+
+
+// ── Admin: Consultations ──
+async function renderConsultationsView() {
+  content.innerHTML = `
+    <div class="section-head">
+      <div><h3>Consultations</h3><div class="sub">All recorded consultations across doctors</div></div>
+      <div class="toolbar"><div class="search-bar" style="min-width:220px">
+        <input type="text" id="conSearch" placeholder="Search patient, doctor or diagnosis…">
+      </div></div>
+    </div>
+    <div id="conList">${skeletonTable(6)}</div>
+  `;
+
+  let consultations = [];
+
+  const renderList = (q = '') => {
+    const listEl = document.getElementById('conList');
+    listEl.innerHTML = '';
+    if (!consultations.length) {
+      listEl.innerHTML = emptyState('📋', 'No consultations yet', 'Consultations recorded by doctors will appear here.');
+      return;
+    }
+    const ql = q.toLowerCase();
+    const filtered = ql ? consultations.filter(c =>
+      (c.patient_name || '').toLowerCase().includes(ql) ||
+      (c.doctor_name || '').toLowerCase().includes(ql) ||
+      (c.diagnosis || '').toLowerCase().includes(ql)
+    ) : consultations;
+    if (!filtered.length) {
+      listEl.innerHTML = emptyState('🔍', 'No matching consultations', 'Try a different search term.');
+      return;
+    }
+    const rows = filtered.map(c => ({
+      cells: [
+        `<strong>${esc(c.patient_name || '—')}</strong><br><small class="text-muted">${esc(c.patient_code || '')}</small>`,
+        esc(c.doctor_name || '—'),
+        formatDate(c.appointment_date) + (c.start_time ? ` · ${esc(c.start_time)}` : ''),
+        esc(c.diagnosis || '—'),
+        esc(c.notes || '—'),
+        statusBadge(c.prescription_status || '—'),
+      ],
+    }));
+    const table = document.createElement('div');
+    table.className = 'table-wrap';
+    table.appendChild(createTable(['Patient', 'Doctor', 'Date', 'Diagnosis', 'Notes', 'Prescription'], rows));
+    listEl.appendChild(table);
+  };
+
+  try {
+    consultations = await api.listConsultations();
+    renderList('');
+  } catch (err) {
+    const listEl = document.getElementById('conList');
+    listEl.innerHTML = '';
+    listEl.appendChild(errorBanner('Could not load consultations — ' + err.message, async () => {
+      try {
+        consultations = await api.listConsultations();
+        renderList(document.getElementById('conSearch').value.trim());
+      } catch (err2) { showToast(err2.message, 'error'); }
+    }));
+  }
+  document.getElementById('conSearch').addEventListener('input', debounce((e) => renderList(e.target.value.trim()), 250));
+}
+
+
+// ── Admin: Staff Management ──
+const STAFF_ROLES = ['admin', 'doctor', 'receptionist', 'pharmacist', 'billing', 'management'];
+const ROLE_META = {
+  admin: { label: 'Admin', cls: 'badge-purple' },
+  doctor: { label: 'Doctor', cls: 'badge-blue' },
+  receptionist: { label: 'Receptionist', cls: 'badge-green' },
+  pharmacist: { label: 'Pharmacist', cls: 'badge-orange' },
+  billing: { label: 'Billing', cls: 'badge-teal' },
+  management: { label: 'Management', cls: 'badge-gray' },
+};
+function roleBadge(role) {
+  const meta = ROLE_META[role] || { label: role || '—', cls: 'badge-gray' };
+  return `<span class="badge ${meta.cls}">${meta.label}</span>`;
+}
+function staffRoleLabel(role) { return role ? role.charAt(0).toUpperCase() + role.slice(1) : '—'; }
+
+async function renderStaffView() {
+  content.innerHTML = `
+    <div class="section-head">
+      <div><h3>Staff Management</h3><div class="sub">Users with dashboard access and their roles</div></div>
+      <button class="btn btn-primary btn-sm" id="addStaffBtn">＋ Add Staff</button>
+    </div>
+    <div id="staffList">${skeletonTable(6)}</div>
+  `;
+
+  let staff = [];
+
+  const renderList = () => {
+    const listEl = document.getElementById('staffList');
+    listEl.innerHTML = '';
+    if (!staff.length) {
+      listEl.innerHTML = emptyState('👥', 'No staff yet', 'Add a staff member to give them dashboard access.');
+      return;
+    }
+    const rows = staff.map(s => {
+      const isSelf = Number(s.id) === Number(user.id);
+      const btns = [`<button class="btn btn-secondary btn-sm st-edit" data-id="${s.id}" data-name="${esc(s.name)}">Edit</button>`];
+      if (isSelf) {
+        btns.push('<span class="badge badge-blue">You</span>');
+      } else if (s.status === 'active') {
+        btns.push(`<button class="btn btn-danger btn-sm st-deact" data-id="${s.id}" data-name="${esc(s.name)}">Deactivate</button>`);
+      } else {
+        btns.push(`<button class="btn btn-success btn-sm st-reactivate" data-id="${s.id}" data-name="${esc(s.name)}">Reactivate</button>`);
+      }
+      return {
+        cells: [
+          `<strong>${esc(s.name)}</strong>`,
+          esc(s.username),
+          roleBadge(s.role),
+          esc(s.phone || '—'),
+          esc(s.email || '—'),
+          statusBadge(s.status),
+          `<div class="flex gap-1">${btns.join('')}</div>`,
+        ],
+      };
+    });
+    const table = document.createElement('div');
+    table.className = 'table-wrap';
+    table.appendChild(createTable(['Name', 'Username', 'Role', 'Phone', 'Email', 'Status', 'Actions'], rows));
+    listEl.appendChild(table);
+  };
+
+  const load = async () => {
+    const listEl = document.getElementById('staffList');
+    try {
+      staff = await api.listStaff();
+      renderList();
+    } catch (err) {
+      listEl.innerHTML = '';
+      listEl.appendChild(errorBanner('Could not load staff — ' + err.message, load));
+    }
+  };
+
+  document.getElementById('addStaffBtn').addEventListener('click', () => {
+    const form = document.createElement('form');
+    form.innerHTML = `
+      <div class="form-row">
+        ${createFormField('Full Name', 'name', 'text', { required: true, placeholder: 'Staff member name' }).outerHTML}
+        ${createFormField('Username', 'username', 'text', { required: true, placeholder: 'login username' }).outerHTML}
+      </div>
+      <div class="form-row">
+        ${createFormField('Password', 'password', 'password', { required: true, placeholder: 'min 6 characters' }).outerHTML}
+        ${createFormField('Role', 'role', 'select', { required: true, options: STAFF_ROLES.map(r => ({ label: staffRoleLabel(r), value: r })) }).outerHTML}
+      </div>
+      <div class="form-row">
+        ${createFormField('Phone', 'phone', 'text', { placeholder: '03xx-xxxxxxx' }).outerHTML}
+        ${createFormField('Email', 'email', 'email', { placeholder: 'name@subhancare.pk' }).outerHTML}
+      </div>
+      <button type="submit" class="btn btn-primary mt-4 w-full">Create Staff Member</button>
+    `;
+    const modal = createModal('Add Staff', form);
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const errEl = modal.body.querySelector('.form-error');
+      if (errEl) errEl.remove();
+      const btn = form.querySelector('button[type="submit"]');
+      btn.disabled = true; btn.textContent = 'Creating…';
+      try {
+        await api.createStaff({
+          name: form.name.value.trim(),
+          username: form.username.value.trim(),
+          password: form.password.value,
+          role: form.role.value,
+          phone: form.phone.value.trim(),
+          email: form.email.value.trim(),
+        });
+        modal.close();
+        showToast('Staff member created', 'success');
+        await load();
+      } catch (err) {
+        btn.disabled = false; btn.textContent = 'Create Staff Member';
+        let errEl = modal.body.querySelector('.form-error');
+        if (!errEl) {
+          errEl = document.createElement('div');
+          errEl.className = 'form-error';
+          modal.body.insertBefore(errEl, modal.body.firstChild);
+        }
+        errEl.textContent = err.message;
+      }
+    });
+  });
+
+  document.getElementById('staffList').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    const id = btn.dataset.id;
+    if (btn.classList.contains('st-edit')) {
+      const s = staff.find(x => Number(x.id) === Number(id));
+      if (s) openEditStaffModal(s, load);
+    }
+    if (btn.classList.contains('st-deact')) {
+      const ok = await showConfirm(`Deactivate ${btn.dataset.name}? They will no longer be able to log in.`);
+      if (!ok) return;
+      try {
+        await api.deactivateStaff(id);
+        showToast(`${btn.dataset.name} deactivated`, 'info');
+        await load();
+      } catch (err) { showToast(err.message, 'error'); }
+    }
+    if (btn.classList.contains('st-reactivate')) {
+      try {
+        await api.updateStaff(id, { status: 'active' });
+        showToast(`${btn.dataset.name} reactivated`, 'success');
+        await load();
+      } catch (err) { showToast(err.message, 'error'); }
+    }
+  });
+
+  await load();
+}
+
+function openEditStaffModal(s, reload) {
+  const isSelf = Number(s.id) === Number(user.id);
+  const form = document.createElement('form');
+  form.innerHTML = `
+    <div class="form-row">
+      ${createFormField('Full Name', 'name', 'text', { required: true, value: s.name }).outerHTML}
+      ${createFormField('Phone', 'phone', 'text', { value: s.phone || '' }).outerHTML}
+    </div>
+    <div class="form-row">
+      ${createFormField('Email', 'email', 'email', { value: s.email || '' }).outerHTML}
+      ${createFormField('Role', 'role', 'select', { options: STAFF_ROLES.map(r => ({ label: staffRoleLabel(r), value: r })) }).outerHTML}
+    </div>
+    <div class="form-row">
+      ${createFormField('Status', 'status', 'select', { options: [{ label: 'Active', value: 'active' }, { label: 'Inactive', value: 'inactive' }] }).outerHTML}
+    </div>
+    ${isSelf ? '<p class="text-muted" style="font-size:0.78rem;margin-top:4px">⚠️ You cannot change your own role or status.</p>' : ''}
+    <button type="submit" class="btn btn-primary mt-4 w-full">Save Changes</button>
+  `;
+  const modal = createModal(`Edit Staff — ${esc(s.name)}`, form);
+  form.role.value = s.role;
+  form.status.value = s.status || 'active';
+  if (isSelf) { form.role.disabled = true; form.status.disabled = true; }
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errEl = modal.body.querySelector('.form-error');
+    if (errEl) errEl.remove();
+    const btn = form.querySelector('button[type="submit"]');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      await api.updateStaff(s.id, {
+        name: form.name.value.trim(),
+        phone: form.phone.value.trim(),
+        email: form.email.value.trim(),
+        role: form.role.value,
+        status: form.status.value,
+      });
+      modal.close();
+      showToast('Staff updated', 'success');
+      await reload();
+    } catch (err) {
+      btn.disabled = false; btn.textContent = 'Save Changes';
+      let errEl = modal.body.querySelector('.form-error');
+      if (!errEl) {
+        errEl = document.createElement('div');
+        errEl.className = 'form-error';
+        modal.body.insertBefore(errEl, modal.body.firstChild);
+      }
+      errEl.textContent = err.message;
+    }
+  });
 }
 
 // ── Admin + pharmacist: pharmacy ──
@@ -713,7 +1327,7 @@ async function renderPharmacyView() {
   document.getElementById('medList').addEventListener('click', async (e) => {
     const btn = e.target.closest('.rs-btn');
     if (!btn) return;
-    const qty = prompt(`Restock ${btn.dataset.name} — quantity to add:`);
+    const qty = await promptModal('Restock Medicine', `Quantity to add for ${btn.dataset.name}:`, '', { min: 1 });
     if (!qty || isNaN(qty) || Number(qty) <= 0) return;
     try {
       await api.restockMedicine(btn.dataset.id, Number(qty));
@@ -776,7 +1390,7 @@ async function renderBillingView() {
     listEl.addEventListener('click', async (e) => {
       const btn = e.target.closest('.pay-btn');
       if (!btn) return;
-      const amt = prompt(`Enter payment amount (max ${btn.dataset.amt}):`, btn.dataset.amt);
+      const amt = await promptModal('Record Payment', `Enter payment amount (max ${formatRs(btn.dataset.amt)}):`, btn.dataset.amt, { min: 1 });
       if (!amt || isNaN(amt) || Number(amt) <= 0) return;
       try {
         const res = await api.payInvoice(btn.dataset.id, Number(amt), 'cash');
@@ -900,7 +1514,7 @@ async function renderTodayView() {
     const table = document.createElement('div');
     table.className = 'table-wrap';
     table.appendChild(createTable(
-      ['Patient', 'Doctor', 'Time', 'Status', 'Actions'],
+      ['Patient', 'Doctor', 'Time', 'Status', 'Source', 'Actions'],
       apptRows(appointments, { checkin: true, cancel: true }),
     ));
     listEl.appendChild(table);
@@ -1167,7 +1781,7 @@ async function renderBookAppointment() {
     bookSubmit.disabled = true;
     try {
       await api.createAppointment({ patient_id: Number(patientId), doctor_id: Number(doctorId), date, start_time: selectedTime });
-      invalidate('appts', 'appts:' + todayStr());
+      invalidatePrefix('appts');
       showToast('Appointment booked!', 'success');
       window.location.hash = '#/dashboard/receptionist';
     } catch (err) {
@@ -1221,7 +1835,7 @@ async function renderDoctorAppointments() {
     const table = document.createElement('div');
     table.className = 'table-wrap';
     table.appendChild(createTable(
-      ['Patient', 'Time', 'Status', 'Actions'],
+      ['Patient', 'Time', 'Status', 'Source', 'Actions'],
       apptRows(appointments, { checkin: true, consult: true }),
     ));
     listEl.appendChild(table);
@@ -1279,7 +1893,7 @@ function openConsultationModal(appointmentId, patientId, patientName) {
         vitals: form.vitals.value.trim() || '{}',
         prescription,
       });
-      invalidate('appts', 'appts:' + todayStr());
+      invalidatePrefix('appts');
       showToast('Consultation recorded!', 'success');
       modal.close();
       renderDoctorAppointments();
@@ -1413,7 +2027,7 @@ async function renderPharmacistInventory() {
   document.getElementById('invList').addEventListener('click', async (e) => {
     const btn = e.target.closest('.rs-btn');
     if (!btn) return;
-    const qty = prompt(`Restock ${btn.dataset.name} — quantity to add:`);
+    const qty = await promptModal('Restock Medicine', `Quantity to add for ${btn.dataset.name}:`, '', { min: 1 });
     if (!qty || isNaN(qty) || Number(qty) <= 0) return;
     try {
       await api.restockMedicine(btn.dataset.id, Number(qty));
@@ -1451,7 +2065,7 @@ async function renderPharmacistLowStock() {
   listEl.addEventListener('click', async (e) => {
     const btn = e.target.closest('.rs-btn');
     if (!btn) return;
-    const qty = prompt(`Restock ${btn.dataset.name} — quantity to add:`);
+    const qty = await promptModal('Restock Medicine', `Quantity to add for ${btn.dataset.name}:`, '', { min: 1 });
     if (!qty || isNaN(qty) || Number(qty) <= 0) return;
     try {
       await api.restockMedicine(btn.dataset.id, Number(qty));
@@ -1516,7 +2130,7 @@ async function renderBillingInvoices() {
   document.getElementById('invList').addEventListener('click', async (e) => {
     const btn = e.target.closest('.pay-btn');
     if (!btn) return;
-    const amt = prompt(`Enter payment amount (max ${btn.dataset.amt}):`, btn.dataset.amt);
+    const amt = await promptModal('Record Payment', `Enter payment amount (max ${formatRs(btn.dataset.amt)}):`, btn.dataset.amt, { min: 1 });
     if (!amt || isNaN(amt) || Number(amt) <= 0) return;
     try {
       const res = await api.payInvoice(btn.dataset.id, Number(amt), 'cash');

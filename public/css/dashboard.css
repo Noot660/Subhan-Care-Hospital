@@ -602,6 +602,55 @@
 .stock-qty.low { color: var(--amber); }
 .stock-qty.crit { color: var(--red); }
 
+/* ── Inline error banner (fetch failures with Retry) ── */
+.dash-body .error-banner {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #fca5a5; border-radius: 10px; padding: 12px 14px; margin-bottom: 14px;
+  font-size: 0.84rem;
+}
+.dash-body .error-banner span { flex: 1; min-width: 200px; }
+
+/* ── AI Ops activity feed ── */
+.dash-body .activity-feed { display: flex; flex-direction: column; gap: 8px; }
+.dash-body .activity-item {
+  display: flex; align-items: center; gap: 12px;
+  background: rgba(255, 255, 255, 0.025); border: 1px solid var(--border);
+  border-radius: 10px; padding: 10px 14px;
+}
+.dash-body .activity-item:hover { background: var(--surface-hover); }
+.dash-body .activity-icon {
+  width: 34px; height: 34px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(59, 130, 246, 0.12); border-radius: 9px; font-size: 1rem;
+}
+.dash-body .activity-main { flex: 1; min-width: 0; }
+.dash-body .activity-title { font-size: 0.85rem; color: var(--text); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dash-body .activity-sub { font-size: 0.78rem; color: var(--text-dim); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dash-body .activity-time { font-size: 0.72rem; color: var(--text-dim); flex-shrink: 0; }
+
+/* ── Analytics channel bars ── */
+.dash-body .channel-bar-row { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.dash-body .channel-bar-label { width: 90px; font-size: 0.8rem; color: #a9aebd; flex-shrink: 0; }
+.dash-body .channel-bar-track { flex: 1; height: 10px; border-radius: 6px; background: rgba(255,255,255,0.06); overflow: hidden; }
+.dash-body .channel-bar-fill { height: 100%; border-radius: 6px; background: linear-gradient(90deg, #1e40af, #3b82f6); transition: width 0.4s ease; }
+.dash-body .channel-bar-count { width: 42px; text-align: right; font-size: 0.82rem; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+
+/* ── Stats card accents ── */
+.dash-body .stats-card.st-blue { border-left-color: #3b82f6; }
+.dash-body .stats-card.st-blue::after { background: radial-gradient(120px 60px at 100% 0%, rgba(59,130,246,0.07), transparent); }
+
+/* ── Modal inline form error ── */
+.dash-body .form-error {
+  background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #fca5a5; border-radius: 8px; padding: 9px 12px; font-size: 0.8rem; margin-bottom: 12px;
+}
+
+/* ── Two-column card grid (analytics) ── */
+.dash-body .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 900px) {
+  .dash-body .grid-2 { grid-template-columns: 1fr; }
+}
+
 /* ═══════════════ RESPONSIVE ═══════════════ */
 
 /* Below 1024px: collapse sidebar to icon-only, expand on hover */
