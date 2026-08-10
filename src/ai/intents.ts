@@ -20,7 +20,7 @@ import {
   getStepIndex,
 } from './conversation';
 import type { Patient, Doctor, DoctorSchedule, Appointment } from '../types';
-import { sensitiveVerifier, SENSITIVE_OPERATION_MESSAGE } from '../security';
+import { MAX_TURNS, sensitiveVerifier, SENSITIVE_OPERATION_MESSAGE } from '../security';
 
 export interface ReceptionistResponse {
   reply: string;
@@ -152,6 +152,20 @@ export async function handleMessage(
 ): Promise<ReceptionistResponse> {
   const lang: Language = (preferredLang === 'ur' ? 'ur' : detectLanguage(message));
   let state = getOrCreateSession(sessionId);
+
+  // Bound multi-turn conversations to prevent unbounded state and abuse.
+  const turnCount = typeof state.context.turnCount === 'number' ? state.context.turnCount : 0;
+  if (turnCount >= MAX_TURNS) {
+    clearSession(state.sessionId);
+    return {
+      reply: 'This conversation has reached its maximum length. Please start a new request.',
+      session_id: state.sessionId,
+      intent: state.intent,
+      language: lang,
+      conversation_active: false,
+    };
+  }
+  state.context.turnCount = turnCount + 1;
 
   // If we have an active conversation flow, continue it
   if (state.intent !== 'unknown' && state.step !== 'init') {
