@@ -4,6 +4,7 @@ import { extractToken, validateSession, getModuleFromPath, hasPermission } from 
 import type { Role } from "./types";
 import { readFileSync, existsSync, statSync } from "fs";
 import { join, extname } from "path";
+import { allowPublicRequest, safeErrorLog } from "./security";
 
 // Route handlers
 import { handleAuthLogin, handleAuthLogout, handleAuthMe } from "./routes/auth";
@@ -130,6 +131,9 @@ async function handleRequest(request: Request): Promise<Response> {
   const isPublic = PUBLIC_ENDPOINTS.some(
     (ep) => request.method === ep.method && (ep.path === "" || pathname.startsWith(ep.path))
   );
+  if (isPublic && pathname.startsWith('/api/receptionist') && !allowPublicRequest(request)) {
+    return error('Too many requests. Please try again shortly.', 429);
+  }
 
   let session = null;
   let token: string | null = null;

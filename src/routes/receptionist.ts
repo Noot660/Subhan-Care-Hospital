@@ -7,6 +7,8 @@ import { getFAQTopicList } from '../ai/faq';
 import { prepareTTS, stripForSpeech } from '../ai/tts';
 import { getVoiceGreeting, getVoicePrompt, detectCallEnd, summarizeCall, prepareForSpeech } from '../ai/voice';
 import type { Language } from '../ai/i18n';
+import { MAX_SESSION_ID_LENGTH, MAX_TURNS, safeErrorLog } from '../security';
+import { getOrCreateSession } from '../ai/conversation';
 
 // Main chat endpoint — full-text responses
 async function handleChat(request: Request): Promise<Response> {
@@ -17,9 +19,8 @@ async function handleChat(request: Request): Promise<Response> {
       language?: string;
     }>(request);
 
-    if (!body.message || typeof body.message !== 'string') {
-      return error('Missing required field: message', 400);
-    }
+    if (!body.message || typeof body.message !== 'string') return error('Invalid request.', 400);
+    if (body.session_id && (body.session_id.length > MAX_SESSION_ID_LENGTH || !/^[a-f0-9]+$/.test(body.session_id))) return error('Invalid request.', 400);
 
     if (body.message.length > 2000) {
       return error('Message too long (max 2000 characters)', 400);
@@ -36,7 +37,8 @@ async function handleChat(request: Request): Promise<Response> {
 
     return json(result);
   } catch (err) {
-    return error(err instanceof Error ? err.message : 'Bad request', 400);
+    safeErrorLog(err, 'receptionist');
+    return error('Unable to process request.', 400);
   }
 }
 
@@ -81,9 +83,8 @@ async function handleVoiceChat(request: Request): Promise<Response> {
       language?: string;
     }>(request);
 
-    if (!body.message || typeof body.message !== 'string') {
-      return error('Missing required field: message', 400);
-    }
+    if (!body.message || typeof body.message !== 'string') return error('Invalid request.', 400);
+    if (body.session_id && (body.session_id.length > MAX_SESSION_ID_LENGTH || !/^[a-f0-9]+$/.test(body.session_id))) return error('Invalid request.', 400);
 
     if (body.message.length > 2000) {
       return error('Message too long (max 2000 characters)', 400);
@@ -125,7 +126,8 @@ async function handleVoiceChat(request: Request): Promise<Response> {
       call_summary: callSummary,
     });
   } catch (err) {
-    return error(err instanceof Error ? err.message : 'Bad request', 400);
+    safeErrorLog(err, 'receptionist');
+    return error('Unable to process request.', 400);
   }
 }
 

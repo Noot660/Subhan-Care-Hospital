@@ -17,12 +17,13 @@ export function error(message: string, status = 400): Response {
 // Parse JSON body
 export async function parseBody<T = Record<string, unknown>>(request: Request): Promise<T> {
   const contentType = request.headers.get("Content-Type") || "";
-  if (!contentType.includes("application/json")) {
-    throw new Error("Content-Type must be application/json");
-  }
+  if (!contentType.includes("application/json")) throw new Error("invalid request");
+  const length = Number(request.headers.get("content-length") || 0);
+  if (length > 16_384) throw new Error("request too large");
   const text = await request.text();
+  if (new TextEncoder().encode(text).byteLength > 16_384) throw new Error("request too large");
   if (!text.trim()) return {} as T;
-  return JSON.parse(text) as T;
+  try { return JSON.parse(text) as T; } catch { throw new Error("invalid request"); }
 }
 
 // Extract path params from URL pattern matching
