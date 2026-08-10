@@ -554,6 +554,7 @@ async function continueBooking(
 
   // ask_identifier step
   if (step === 'ask_identifier') {
+    if (!sensitiveVerifier.verify(state.sessionId, text)) return { reply: SENSITIVE_OPERATION_MESSAGE, session_id: state.sessionId, intent: 'book_appointment', language: lang, conversation_active: false };
     const patient = findPatientByIdentifier(text);
 
     // Track failed lookup attempts
