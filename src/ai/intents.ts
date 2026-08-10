@@ -20,6 +20,7 @@ import {
   getStepIndex,
 } from './conversation';
 import type { Patient, Doctor, DoctorSchedule, Appointment } from '../types';
+import { sensitiveVerifier, SENSITIVE_OPERATION_MESSAGE } from '../security';
 
 export interface ReceptionistResponse {
   reply: string;
@@ -248,7 +249,7 @@ async function startRegistration(
         intent: 'register_patient',
         language: lang,
         conversation_active: true,
-        action: { type: 'patient_found', data: { patient_id: existing.patient_id, full_name: existing.full_name } },
+        action: { type: 'patient_found', data: { patient_id: existing.patient_id } },
       };
     }
   }
@@ -327,14 +328,14 @@ async function continueRegistration(
            collected.emergency_contact.replace(/[-\s]/g, ''), now, now]
         );
 
-        recordAiEvent(state.sessionId, channel, 'patient_created', { patient_id: patientId, full_name: collected.full_name });
+        recordAiEvent(state.sessionId, channel, 'patient_created', { patient_id: patientId });
 
         clearSession(state.sessionId);
         return {
           reply: t('reg_success', lang, { patient_id: patientId }),
           session_id: state.sessionId,
           intent: 'register_patient',
-          action: { type: 'patient_created', data: { patient_id: patientId, full_name: collected.full_name } },
+          action: { type: 'patient_created', data: { patient_id: patientId } },
           language: lang,
           conversation_active: false,
         };
@@ -410,7 +411,7 @@ async function continueRegistration(
             intent: 'register_patient',
             language: lang,
             conversation_active: true,
-            action: { type: 'patient_found', data: { patient_id: existing.patient_id, full_name: existing.full_name } },
+            action: { type: 'patient_found', data: { patient_id: existing.patient_id } },
           };
         }
       }
@@ -944,6 +945,7 @@ async function continueCheckAppointment(
   const text = message.trim();
 
   if (state.step === 'ask_identifier') {
+    if (!sensitiveVerifier.verify(state.sessionId, text)) return { reply: SENSITIVE_OPERATION_MESSAGE, session_id: state.sessionId, intent: 'check_appointment', language: lang, conversation_active: false };
     const patient = findPatientByIdentifier(text);
     if (!patient) {
       return {
@@ -985,7 +987,7 @@ async function continueCheckAppointment(
       intent: 'check_appointment',
       language: lang,
       conversation_active: false,
-      action: { type: 'appointments_list', data: { patient_id: patient.patient_id, appointments } },
+      action: { type: 'appointments_list', data: { patient_id: patient.patient_id, count: appointments.length } },
     };
   }
 
@@ -1032,7 +1034,7 @@ function startTriage(
   const isEmergency = emergencyKeywords.some(kw => lower.includes(kw));
 
   if (isEmergency) {
-    recordAiEvent(state.sessionId, channel, 'triage', { symptom, outcome: 'emergency' });
+    recordAiEvent(state.sessionId, channel, 'triage', { outcome: 'emergency' });
     clearSession(state.sessionId);
     return Promise.resolve({
       reply: t('triage_emergency', lang),
@@ -1074,7 +1076,7 @@ async function continueTriage(
     const severity = severityMatch ? parseInt(severityMatch[1]) : 5;
 
     if (severity >= 8) {
-      recordAiEvent(state.sessionId, channel, 'triage', { symptom: collected.symptom, severity, outcome: 'emergency' });
+      recordAiEvent(state.sessionId, channel, 'triage', { severity, outcome: 'emergency' });
       clearSession(state.sessionId);
       return {
         reply: t('triage_emergency', lang),
@@ -1117,7 +1119,7 @@ async function continueTriage(
         : 'Please see a doctor for a proper checkup.';
 
       const disclaimer = t('triage_disclaimer', lang);
-      recordAiEvent(state.sessionId, channel, 'triage', { symptom: collected.symptom, severity, outcome: 'see_doctor' });
+      recordAiEvent(state.sessionId, channel, 'triage', { severity, outcome: 'see_doctor' });
       return {
         reply: t('triage_recommend_doctor', lang, { specialty_info: specialtyInfo }) + '\n\n' + disclaimer,
         session_id: state.sessionId,
@@ -1127,7 +1129,7 @@ async function continueTriage(
       };
     } else {
       const disclaimer = t('triage_disclaimer', lang);
-      recordAiEvent(state.sessionId, channel, 'triage', { symptom: collected.symptom, severity, outcome: 'self_care' });
+      recordAiEvent(state.sessionId, channel, 'triage', { severity, outcome: 'self_care' });
       return {
         reply: t('triage_recommend_rest', lang) + '\n\n' + disclaimer,
         session_id: state.sessionId,
@@ -1181,6 +1183,7 @@ async function continueCancelReschedule(
   const context = { ...state.context };
 
   if (state.step === 'ask_identifier') {
+    if (!sensitiveVerifier.verify(state.sessionId, text)) return { reply: SENSITIVE_OPERATION_MESSAGE, session_id: state.sessionId, intent: 'cancel_reschedule', language: lang, conversation_active: false };
     const patient = findPatientByIdentifier(text);
     if (!patient) {
       return {
@@ -1319,7 +1322,7 @@ async function continueCancelReschedule(
 
       db.run("UPDATE appointments SET status = 'cancelled', cancellation_reason = 'Cancelled by patient via AI receptionist', updated_at = ? WHERE id = ?", [now, apptId]);
 
-      recordAiEvent(state.sessionId, channel, 'appointment_cancelled', { appointment_id: apptId, patient_name: collected.patient_name || '' });
+      recordAiEvent(state.sessionId, channel, 'appointment_cancelled', { appointment_id: apptId });
       clearSession(state.sessionId);
 
       return {

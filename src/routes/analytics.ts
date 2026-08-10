@@ -90,11 +90,8 @@ function handleAiEvents(url: URL): Response {
   }>;
 
   const events = rows.map((row) => {
-    let details: unknown = null;
-    if (row.details) {
-      try { details = JSON.parse(row.details); } catch { details = row.details; }
-    }
-    return { id: row.id, session_id: row.session_id, channel: row.channel, event_type: row.event_type, details, created_at: row.created_at };
+    // Details may contain identifiers or free text; analytics exposes operational metadata only.
+    return { id: row.id, channel: row.channel, event_type: row.event_type, created_at: row.created_at };
   });
 
   return json({ events, count: events.length, limit });
