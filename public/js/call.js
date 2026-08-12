@@ -22,6 +22,7 @@ const LANG_KEY = 'sca_lang';
 let lang = 'en';
 try { if (localStorage.getItem(LANG_KEY) === 'ur') lang = 'ur'; } catch (_) {}
 let currentState = 'idle';
+let noSupportMode = false; // true when Web Speech API is missing entirely
 let autoMode = false;
 let textMode = false;
 let muted = false;
@@ -99,6 +100,8 @@ const UI = {
     noSupportTitle: "Voice calling isn't supported in this browser",
     noSupportBody: 'This browser does not support the Web Speech API (microphone or speech). No problem — you can still talk to us by typing your message below.',
     noSupportLink: 'Open Chat',
+    ttsFallbackTitle: 'Urdu voice not available on this device',
+    ttsFallbackBody: 'No Urdu voice is installed in this browser, so replies will be spoken in an English or system voice. There is no server-side Urdu TTS. You can still read the transcript below.',
   },
   ur: {
     title: 'Voice Call — Subhan Care AI',
@@ -123,6 +126,8 @@ const UI = {
     noSupportTitle: 'Is browser mein voice call supported nahi hai',
     noSupportBody: 'Is browser mein Web Speech API maujood nahi hai. Koi baat nahi — aap neeche type karke bhi humse baat kar sakte hain.',
     noSupportLink: 'Chat kholen',
+    ttsFallbackTitle: 'Is device par Urdu awaz maujood nahi',
+    ttsFallbackBody: 'Is browser mein Urdu voice nahi hai, is liye jawab angrezi ya system voice mein sunai denge. Server par Urdu TTS nahi hai. Aap neeche transcript parh sakte hain.',
   },
 };
 
@@ -165,6 +170,29 @@ function applyLangUI() {
     }
   }
   updateChips(currentState);
+}
+
+// ── Urdu TTS fallback notice ──
+// When Urdu is active but the browser has no ur-* voice, speak() falls back to
+// an English/system voice. Be honest about it: show a clear notice reusing the
+// same banner as the no-support case. We never pretend server-side Urdu TTS
+// exists — there is none; synthesis is entirely client-side (Web Speech API).
+function updateTtsFallbackNotice() {
+  const notice = document.getElementById('voiceNotice');
+  if (!notice || noSupportMode) return; // no-support banner is owned by its own path
+  const nt = notice.querySelector('#voiceNoticeTitle');
+  const nb = notice.querySelector('#voiceNoticeBody');
+  const nl = notice.querySelector('#voiceNoticeLink');
+  const noUrduVoice = lang === 'ur' && voiceSupported && !getVoice();
+  if (noUrduVoice) {
+    if (nt) nt.textContent = ui().ttsFallbackTitle;
+    if (nb) nb.textContent = ui().ttsFallbackBody;
+    if (nl) nl.style.display = 'none'; // "Open Chat" link isn't relevant here
+    notice.hidden = false;
+  } else {
+    notice.hidden = true;
+    if (nl) nl.style.display = '';
+  }
 }
 
 // ── Orb icons ──
@@ -1003,6 +1031,7 @@ langToggle.addEventListener('click', () => {
   lang = lang === 'en' ? 'ur' : 'en';
   try { localStorage.setItem(LANG_KEY, lang); } catch (_) {}
   applyLangUI();
+  updateTtsFallbackNotice();
   stopRecognition();
   updateRecogLang();
   if (callActive && !processing) {
@@ -1156,6 +1185,7 @@ if (themeMeta) {
 
 if (!voiceSupported) {
   // Web Speech API unavailable: explain clearly, offer text chat instead.
+  noSupportMode = true;
   const notice = document.getElementById('voiceNotice');
   if (notice) notice.hidden = false;
   setStatus('idle', ui().noSupportTitle);
@@ -1165,12 +1195,15 @@ if (!voiceSupported) {
   startTimer();
 } else {
   setStatus('idle');
+  // Urdu active but no ur-* voice installed yet: show the honest fallback
+  // notice now (re-evaluated once voices finish loading below).
+  updateTtsFallbackNotice();
 }
 
 // Preload voices (voices load asynchronously in Chrome — re-read on
 // voiceschanged so speak() always sees the freshest list).
 if (synth) {
-  const refreshVoices = () => { try { synth.getVoices(); } catch (_) {} };
+  const refreshVoices = () => { try { synth.getVoices(); } catch (_) {} updateTtsFallbackNotice(); };
   refreshVoices();
   synth.onvoiceschanged = refreshVoices;
   window.addEventListener('voiceschanged', refreshVoices);

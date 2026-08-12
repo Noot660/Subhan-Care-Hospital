@@ -22,6 +22,7 @@ import {
 import type { Patient, Doctor, DoctorSchedule, Appointment } from '../types';
 import { MAX_TURNS, sensitiveVerifier, SENSITIVE_OPERATION_MESSAGE } from '../security';
 import { availableSlots as getAvailableSlots, validateAppointmentInput, validateCalendarDate } from '../appointments/validation';
+import { detectRedFlag } from './safety';
 
 export interface ReceptionistResponse {
   reply: string;
@@ -168,6 +169,24 @@ export async function handleMessage(
   }
   state.context.turnCount = turnCount + 1;
 
+  // Clinical safety gate — runs on EVERY utterance, before intent
+  // classification and before any in-progress flow can continue. Deterministic
+  // red-flag phrases (English + Roman Urdu) escalate straight to emergency
+  // care; this is navigation only and never a diagnosis. A patient mid-booking
+  // who suddenly says 'saans nahi aa rahi' still gets emergency escalation.
+  const redFlag = detectRedFlag(message);
+  if (redFlag) {
+    recordAiEvent(state.sessionId, channel, 'triage', { outcome: 'emergency', red_flag: redFlag.category });
+    clearSession(state.sessionId);
+    return {
+      reply: t('triage_emergency', lang),
+      session_id: state.sessionId,
+      intent: 'triage',
+      language: lang,
+      conversation_active: false,
+    };
+  }
+
   // If we have an active conversation flow, continue it
   if (state.intent !== 'unknown' && state.step !== 'init') {
     return continueFlow(state, message, lang, channel);
@@ -226,7 +245,7 @@ async function startFlow(
     case 'faq':
       return handleFAQ(state, message, lang, channel);
     case 'triage':
-      return startTriage(state, classified, lang, channel);
+      return startTriage(state, classified, message, lang, channel);
     case 'cancel_reschedule':
       return startCancelReschedule(state, classified, lang);
     default:
@@ -609,7 +628,6 @@ async function continueBooking(
     // Reset lookup attempts on success
     context.lookupAttempts = 0;
     collected.patient_id = String(patient.id);
-    collected.patient_name = patient.full_name;
 
     // Move to doctor selection
     const db = getDb();
@@ -854,7 +872,9 @@ async function continueBooking(
           doctor_name: collected.doctor_name,
           date,
           time: startTime,
-          patient_name: collected.patient_name || '',
+          // NOTE: no patient_name / free-text PHI here — privacy baseline
+          // (docs/security-privacy-baseline.md): AI event details never include
+          // names. The appointment_id links back to the record for staff.
         });
 
         clearSession(state.sessionId);
@@ -1022,20 +1042,20 @@ function handleFAQ(
 function startTriage(
   state: ConversationState,
   classified: ClassifiedIntent,
+  message: string,
   lang: Language,
   channel: string
 ): Promise<ReceptionistResponse> {
   const symptom = classified.entities.symptom || 'symptoms';
 
-  // Emergency keywords check
-  const emergencyKeywords = ['chest pain', 'severe bleeding', 'cannot breathe', "can't breathe",
-    'unconscious', 'heart attack', 'stroke', 'severe burn', 'severe injury',
-    'loss of consciousness', 'seizure'];
-  const lower = classified.entities.symptom || '';
-  const isEmergency = emergencyKeywords.some(kw => lower.includes(kw));
+  // Emergency red-flag check — runs against the FULL utterance (not just the
+  // extracted symptom entity, which is a single keyword and misses phrases like
+  // 'seena mein dard' or 'saans nahi aa rahi'). Shared deterministic module,
+  // escalation only, no diagnosis.
+  const redFlag = detectRedFlag(message) || detectRedFlag(classified.entities.symptom || '');
 
-  if (isEmergency) {
-    recordAiEvent(state.sessionId, channel, 'triage', { outcome: 'emergency' });
+  if (redFlag) {
+    recordAiEvent(state.sessionId, channel, 'triage', { outcome: 'emergency', red_flag: redFlag.category });
     clearSession(state.sessionId);
     return Promise.resolve({
       reply: t('triage_emergency', lang),
@@ -1073,8 +1093,21 @@ async function continueTriage(
   const collected = { ...state.collected };
 
   if (state.step === 'ask_severity') {
-    const severityMatch = text.match(/\b(\d+)\b/);
-    const severity = severityMatch ? parseInt(severityMatch[1]) : 5;
+    // Only a numeric 1–10 severity is accepted. A missing or unparseable value
+    // must NEVER default to a severity — re-ask for the number. Out-of-range
+    // values (0, 11, 50, …) are rejected the same way.
+    const severityMatch = text.match(/(?<![-\d])\b(\d{1,2})\b/);
+    const severity = severityMatch ? parseInt(severityMatch[1], 10) : NaN;
+
+    if (!severityMatch || Number.isNaN(severity) || severity < 1 || severity > 10) {
+      return {
+        reply: t('triage_severity_invalid', lang),
+        session_id: state.sessionId,
+        intent: 'triage',
+        language: lang,
+        conversation_active: true,
+      };
+    }
 
     if (severity >= 8) {
       recordAiEvent(state.sessionId, channel, 'triage', { severity, outcome: 'emergency' });
@@ -1109,7 +1142,12 @@ async function continueTriage(
     // Check for red flags in duration
     const severity = parseInt(collected.severity) || 5;
     const lower = text.toLowerCase();
-    const isLongDuration = /\b(week|month|hafta|maah|mahina|weeks|months)\b/i.test(lower) || /\b(\d+)\s*(day|din)\b/i.test(lower) && parseInt(lower.match(/\d+/)?.[0] || '0') > 7;
+    // Long-duration markers — English + Roman Urdu, including the oblique/plural
+    // variants 'hafte'/'haftey' (hafta) and 'mahine'/'maheene' (mahina) that
+    // callers actually use ('do hafte', 'teen mahine').
+    const isLongDuration =
+      /\b(week|weeks|month|months|year|years|hafta|hafte|haftey|maah|mahina|mahine|maheene|saal)\b/i.test(lower) ||
+      (/\b(\d+)\s*(day|din)\b/i.test(lower) && parseInt(lower.match(/\d+/)?.[0] || '0', 10) > 7);
 
     clearSession(state.sessionId);
 
@@ -1197,7 +1235,6 @@ async function continueCancelReschedule(
     }
 
     collected.patient_id = String(patient.id);
-    collected.patient_name = patient.full_name;
 
     const db = getDb();
     const appointments = db.query(
