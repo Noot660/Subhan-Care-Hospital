@@ -21,6 +21,7 @@ import {
 } from './conversation';
 import type { Patient, Doctor, DoctorSchedule, Appointment } from '../types';
 import { MAX_TURNS, sensitiveVerifier, SENSITIVE_OPERATION_MESSAGE } from '../security';
+import { availableSlots as getAvailableSlots, validateAppointmentInput, validateCalendarDate } from '../appointments/validation';
 
 export interface ReceptionistResponse {
   reply: string;
@@ -686,8 +687,8 @@ async function continueBooking(
     }
 
     const date = dateMatch[0];
-    const today = new Date().toISOString().split('T')[0];
-    if (date < today) {
+    const dateValidation = validateCalendarDate(date);
+    if (!dateValidation.ok) {
       return {
         reply: t('book_invalid_date', lang),
         session_id: state.sessionId,
@@ -702,7 +703,7 @@ async function continueBooking(
     // Get slots for this date
     const db = getDb();
     const doctorId = Number(collected.doctor_id);
-    const dayOfWeek = new Date(date + 'T00:00:00').getDay();
+    const dayOfWeek = dateValidation.ok ? dateValidation.dayOfWeek : -1;
     const schedules = db.query("SELECT * FROM doctor_schedules WHERE doctor_id = ? AND day_of_week = ?").all(doctorId, dayOfWeek) as DoctorSchedule[];
 
     if (schedules.length === 0) {
@@ -717,27 +718,7 @@ async function continueBooking(
     }
 
     // Build available slots
-    const bookedSlots = db.query(
-      `SELECT start_time FROM appointments WHERE doctor_id = ? AND date = ? AND status NOT IN ('cancelled', 'no-show')`
-    ).all(doctorId, date) as Array<{ start_time: string }>;
-
-    const allSlots: Array<{ start_time: string; end_time: string; available: boolean }> = [];
-    for (const schedule of schedules) {
-      let current = schedule.start_time;
-      while (current < schedule.end_time) {
-        const [h, m] = current.split(':').map(Number);
-        let endH = h, endM = m + 30;
-        if (endM >= 60) { endH += 1; endM -= 60; }
-        const endTime = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
-        if (endTime <= schedule.end_time) {
-          const isBooked = bookedSlots.some((b) => b.start_time === current);
-          allSlots.push({ start_time: current, end_time: endTime, available: !isBooked });
-        }
-        current = endTime;
-      }
-    }
-
-    const availableSlots = allSlots.filter(s => s.available);
+    const availableSlots = getAvailableSlots(db, doctorId, date);
     if (availableSlots.length === 0) {
       return {
         reply: t('book_no_slots', lang, { doctor_name: collected.doctor_name, date }),
@@ -786,6 +767,13 @@ async function continueBooking(
     const m = timeMatch[2];
     const time = `${h}:${m}`;
 
+    const db = getDb();
+    const timeValidation = validateAppointmentInput(db, Number(collected.doctor_id), String(collected.date), time);
+    if (!timeValidation.ok) {
+      const slots = getAvailableSlots(db, Number(collected.doctor_id), String(collected.date));
+      updateSession(state.sessionId, { context: { ...context, availableSlots: slots } });
+      return { reply: `${timeValidation.message} Available slots: ${slots.map(s => s.start_time).join(', ')}`, session_id: state.sessionId, intent: 'book_appointment', language: lang, conversation_active: true };
+    }
     collected.time = time;
 
     // Confirm
@@ -814,57 +802,51 @@ async function continueBooking(
   if (step === 'confirm') {
     if (isAffirmative(text)) {
       // Create the appointment
+      const db = getDb();
+      const patientId = Number(collected.patient_id);
+      const doctorId = Number(collected.doctor_id);
+      const date = collected.date;
+      const startTime = collected.time;
+
+      // A slot raced away (concurrent booking). Roll back to the time-selection
+      // step with the still-live slots so the patient can pick another time
+      // without restarting the conversation.
+      const slotConflictReply = () => {
+        const slots = getAvailableSlots(db, doctorId, date);
+        const collectedWithoutTime = { ...collected };
+        delete collectedWithoutTime.time;
+        updateSession(state.sessionId, {
+          step: 'ask_time',
+          collected: collectedWithoutTime,
+          context: { ...context, availableSlots: slots },
+        });
+        return {
+          reply: `This slot was just booked. Available slots: ${slots.map(s => s.start_time).join(', ') || 'Please choose another date or doctor.'}`,
+          session_id: state.sessionId,
+          intent: 'book_appointment',
+          language: lang,
+          conversation_active: true,
+        };
+      };
       try {
-        const db = getDb();
-        const patientId = Number(collected.patient_id);
-        const doctorId = Number(collected.doctor_id);
-        const date = collected.date;
-        const startTime = collected.time;
-
-        // Compute end time
-        const [h, m] = startTime.split(':').map(Number);
-        let endH = h, endM = m + 30;
-        if (endM >= 60) { endH += 1; endM -= 60; }
-        const endTime = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
-
-        // Check if slot is still available
-        const existing = db.query(
-          `SELECT id FROM appointments WHERE doctor_id = ? AND date = ? AND start_time = ? AND status NOT IN ('cancelled', 'no-show')`
-        ).get(doctorId, date, startTime);
-
-        if (existing) {
-          return {
-            reply: t('book_slot_taken', lang, { slots: 'Please try another time.' }),
-            session_id: state.sessionId,
-            intent: 'book_appointment',
-            language: lang,
-            conversation_active: true,
-          };
+        const finalValidation = validateAppointmentInput(db, doctorId, date, startTime);
+        if (!finalValidation.ok) {
+          return { reply: finalValidation.message, session_id: state.sessionId, intent: 'book_appointment', language: lang, conversation_active: true };
         }
 
-        // Check doctor schedule
-        const dayOfWeek = new Date(date + 'T00:00:00').getDay();
-        const schedule = db.query(
-          "SELECT * FROM doctor_schedules WHERE doctor_id = ? AND day_of_week = ? AND start_time <= ? AND end_time >= ?"
-        ).get(doctorId, dayOfWeek, startTime, endTime);
-
-        if (!schedule) {
-          return {
-            reply: lang === 'ur' ? 'Doctor is time par available nahi hain.' : 'Doctor is not available at this time.',
-            session_id: state.sessionId,
-            intent: 'book_appointment',
-            language: lang,
-            conversation_active: true,
-          };
+        // The partial unique index makes this insert atomic against concurrent bookings.
+        if (db.query(`SELECT id FROM appointments WHERE doctor_id = ? AND date = ? AND start_time = ? AND status IN ('scheduled', 'checked-in', 'completed')`).get(doctorId, date, startTime)) {
+          return slotConflictReply();
         }
 
+        // Schedule and slot validity are centralized in validateAppointmentInput above.
         const now = new Date().toISOString();
         // Map conversation channel to appointment booking source: chat→'chat', voice→'voice', twilio→'twilio'
         const source: string = channel === 'chat' ? 'chat' : channel === 'twilio' ? 'twilio' : 'voice';
         const result = db.run(
           `INSERT INTO appointments (patient_id, doctor_id, date, start_time, end_time, status, source, created_at, updated_at)
            VALUES (?, ?, ?, ?, ?, 'scheduled', ?, ?, ?)`,
-          [patientId, doctorId, date, startTime, endTime, source, now, now]
+          [patientId, doctorId, date, startTime, finalValidation.endTime, source, now, now]
         );
 
         recordAiEvent(state.sessionId, channel, 'appointment_created', {
@@ -891,6 +873,10 @@ async function continueBooking(
           conversation_active: false,
         };
       } catch (err) {
+        // Lost a race for this slot (unique index backstop) → offer fresh slots.
+        if (String(err).toLowerCase().includes('unique')) {
+          return slotConflictReply();
+        }
         return {
           reply: lang === 'ur'
             ? `Maazrat, booking mein masla ho gaya. Baraye meherbani dobara koshish karein.`
@@ -1377,45 +1363,23 @@ async function continueCancelReschedule(
     }
 
     const newDate = dateMatch[0];
-    collected.new_date = newDate;
-
-    // Get slots for new date
-    const db = getDb();
-    const doctorId = Number(collected.doctor_id);
-    const dayOfWeek = new Date(newDate + 'T00:00:00').getDay();
-    const schedules = db.query("SELECT * FROM doctor_schedules WHERE doctor_id = ? AND day_of_week = ?").all(doctorId, dayOfWeek) as DoctorSchedule[];
-
-    if (schedules.length === 0) {
+    // Strict calendar validation — rejects impossible dates (e.g. 2026-02-31) and past dates.
+    const dateValidation = validateCalendarDate(newDate);
+    if (!dateValidation.ok) {
       return {
-        reply: t('book_no_slots', lang, { doctor_name: collected.doctor_name, date: newDate }),
+        reply: t('book_invalid_date', lang),
         session_id: state.sessionId,
         intent: 'cancel_reschedule',
         language: lang,
         conversation_active: true,
       };
     }
+    collected.new_date = newDate;
 
-    const bookedSlots = db.query(
-      `SELECT start_time FROM appointments WHERE doctor_id = ? AND date = ? AND status NOT IN ('cancelled', 'no-show')`
-    ).all(doctorId, newDate) as Array<{ start_time: string }>;
-
-    const allSlots: Array<{ start_time: string; end_time: string; available: boolean }> = [];
-    for (const schedule of schedules) {
-      let current = schedule.start_time;
-      while (current < schedule.end_time) {
-        const [h, m] = current.split(':').map(Number);
-        let endH = h, endM = m + 30;
-        if (endM >= 60) { endH += 1; endM -= 60; }
-        const endTime = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
-        if (endTime <= schedule.end_time) {
-          const isBooked = bookedSlots.some((b) => b.start_time === current);
-          allSlots.push({ start_time: current, end_time: endTime, available: !isBooked });
-        }
-        current = endTime;
-      }
-    }
-
-    const availableSlots = allSlots.filter(s => s.available);
+    // Get live slots for new date (shared slot generation in ../appointments/validation).
+    const db = getDb();
+    const doctorId = Number(collected.doctor_id);
+    const availableSlots = getAvailableSlots(db, doctorId, newDate);
     if (availableSlots.length === 0) {
       return {
         reply: t('book_no_slots', lang, { doctor_name: collected.doctor_name, date: newDate }),
@@ -1461,34 +1425,35 @@ async function continueCancelReschedule(
     const h = timeMatch[1].padStart(2, '0');
     const m = timeMatch[2];
     const newTime = `${h}:${m}`;
-
+    const db = getDb();
+    const apptId = Number(collected.appointment_id);
+    const newDate = collected.new_date;
+    const doctorId = Number(collected.doctor_id);
+    // Shared validation — only live generated slots are acceptable.
+    const timeValidation = validateAppointmentInput(db, doctorId, newDate, newTime);
+    if (!timeValidation.ok) {
+      const slots = getAvailableSlots(db, doctorId, newDate);
+      return {
+        reply: `${timeValidation.message} Available slots: ${slots.map(s => s.start_time).join(', ')}`,
+        session_id: state.sessionId,
+        intent: 'cancel_reschedule',
+        language: lang,
+        conversation_active: true,
+      };
+    }
+    // Slot already held (or raced away) → offer what is still live.
+    if (db.query(`SELECT id FROM appointments WHERE doctor_id = ? AND date = ? AND start_time = ? AND id != ? AND status IN ('scheduled', 'checked-in', 'completed')`).get(doctorId, newDate, newTime, apptId)) {
+      const slots = getAvailableSlots(db, doctorId, newDate);
+      return {
+        reply: `This slot was just booked. Available slots: ${slots.map(s => s.start_time).join(', ') || 'Please choose another date or doctor.'}`,
+        session_id: state.sessionId,
+        intent: 'cancel_reschedule',
+        language: lang,
+        conversation_active: true,
+      };
+    }
+    const endTime = timeValidation.endTime;
     try {
-      const db = getDb();
-      const apptId = Number(collected.appointment_id);
-      const newDate = collected.new_date;
-      const doctorId = Number(collected.doctor_id);
-
-      // Check slot availability
-      const existing = db.query(
-        `SELECT id FROM appointments WHERE doctor_id = ? AND date = ? AND start_time = ? AND id != ? AND status NOT IN ('cancelled', 'no-show')`
-      ).get(doctorId, newDate, newTime, apptId);
-
-      if (existing) {
-        return {
-          reply: t('book_slot_taken', lang, { slots: 'Please try another time.' }),
-          session_id: state.sessionId,
-          intent: 'cancel_reschedule',
-          language: lang,
-          conversation_active: true,
-        };
-      }
-
-      // Compute end time
-      const [nh, nm] = newTime.split(':').map(Number);
-      let endH = nh, endM = nm + 30;
-      if (endM >= 60) { endH += 1; endM -= 60; }
-      const endTime = `${String(endH).padStart(2, '0')}:${String(endM).padStart(2, '0')}`;
-
       const now = new Date().toISOString();
       db.run(
         "UPDATE appointments SET date = ?, start_time = ?, end_time = ?, cancellation_reason = 'Rescheduled by patient via AI receptionist', updated_at = ? WHERE id = ?",
@@ -1511,6 +1476,17 @@ async function continueCancelReschedule(
         action: { type: 'appointment_rescheduled', data: { appointment_id: apptId, new_date: newDate, new_time: newTime } },
       };
     } catch (err) {
+      // Lost a race for the target slot (unique index backstop) → offer fresh slots.
+      if (String(err).toLowerCase().includes('unique')) {
+        const slots = getAvailableSlots(db, doctorId, newDate);
+        return {
+          reply: `This slot was just booked. Available slots: ${slots.map(s => s.start_time).join(', ') || 'Please choose another date or doctor.'}`,
+          session_id: state.sessionId,
+          intent: 'cancel_reschedule',
+          language: lang,
+          conversation_active: true,
+        };
+      }
       return {
         reply: lang === 'ur'
           ? 'Maazrat, reschedule mein masla ho gaya. Baraye meherbani dobara koshish karein.'
