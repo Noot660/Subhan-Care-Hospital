@@ -238,6 +238,36 @@ const strings: Record<string, Record<Language, string>> = {
     ur: "✅ Reschedule ho gayi!\n\n👨‍⚕️ {doctor_name}\n📅 {date} at {time}\n\nAur kuch?",
   },
 
+  // ── Human handoff / callback ──
+  handoff_unavailable: {
+    en: "I'm sorry — a callback from our front desk is not currently available.{phone_line} Is there anything else I can help you with?",
+    ur: "Maazrat — filhaal front desk se callback available nahi hai.{phone_line} Aur kuch madad chahiye?",
+  },
+  handoff_ask_phone: {
+    en: "I can request a callback from our front desk. What phone number should we call you on? (e.g., 0300-1234567)",
+    ur: "Main front desk se callback karwa sakta hoon. Kaunse number par call karein? (Misaal: 0300-1234567)",
+  },
+  handoff_ask_reason: {
+    en: "Thanks — **{phone}** is noted. Would you like to briefly tell us the reason for the callback? (Optional — you can say 'no' to skip.)",
+    ur: "Shukriya — **{phone}** note kar liya. Callback ki wajah bataana chahenge? (Optional — 'nahi' keh kar skip kar sakte hain.)",
+  },
+  handoff_reason_too_long: {
+    en: "That reason is too long (maximum 200 characters). Please keep it brief, or say 'no' to skip.",
+    ur: "Wajah bohot lambi hai (zayada se zayada 200 characters). Mukhtasar rakhein, ya 'nahi' keh kar skip karein.",
+  },
+  handoff_recorded: {
+    en: "✅ Your callback request has been recorded. Our front desk team will call you back at **{phone}** {hours_sla}. This is a request only — we cannot guarantee a specific response time.",
+    ur: "✅ Aapki callback request record ho gayi. Front desk **{phone}** par waapis call karega {hours_sla}. Yeh sirf ek request hai — response time ki koi guarantee nahi.",
+  },
+  handoff_duplicate: {
+    en: "ℹ️ You already have a callback request pending for **{phone}**. Our front desk team will call you back {hours_sla}. We'll be in touch.",
+    ur: "ℹ️ Aapki **{phone}** ke liye callback request pehle se pending hai. Front desk {hours_sla} par waapis call karega.",
+  },
+  handoff_after_emergency: {
+    en: "\n\nAfter you have called emergency services, you can also ask me to have our front desk call you back.",
+    ur: "\n\nEmergency services ko call karne ke baad, agar chahein to front desk se callback karwa sakte hain.",
+  },
+
   // ── Validation ──
   validation_required: {
     en: "⚠️ This field is required. Please provide a valid value.",

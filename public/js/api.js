@@ -234,6 +234,23 @@ export const api = {
     return request(`/api/analytics/channels?period=${period}`);
   },
 
+  // Callback queue (admin only)
+  listCallbacks(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/api/callbacks${qs ? '?' + qs : ''}`);
+  },
+
+  getCallback(id) {
+    return request(`/api/callbacks/${id}`);
+  },
+
+  updateCallbackStatus(id, status) {
+    return request(`/api/callbacks/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status }),
+    });
+  },
+
   // Staff management (admin only)
   listStaff() {
     return request('/api/staff');

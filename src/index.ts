@@ -18,6 +18,7 @@ import { handleBilling } from "./routes/billing";
 import { handleConsultations } from "./routes/consultations";
 import { handleAnalytics } from "./routes/analytics";
 import { handleStaff } from "./routes/staff";
+import { handleCallbacks } from "./routes/callbacks";
 
 // Whitelist of endpoints that don't require authentication
 const PUBLIC_ENDPOINTS = [
@@ -212,6 +213,11 @@ async function handleRequest(request: Request): Promise<Response> {
   // Staff management — RBAC module "users" (admin only)
   if (pathname.startsWith("/api/staff")) {
     return handleStaff(request);
+  }
+
+  // Callback queue — RBAC module "callbacks" (admin only)
+  if (pathname.startsWith("/api/callbacks")) {
+    return handleCallbacks(request);
   }
 
   // AI Receptionist (public — no auth required)
