@@ -3,6 +3,7 @@
 
 import { getDb } from '../db';
 import { json, error } from '../middleware/http';
+import { countPendingCallbacks } from '../handoff/store';
 
 const VALID_PERIODS = ['today', '7d', '30d'] as const;
 type Period = (typeof VALID_PERIODS)[number];
@@ -54,6 +55,10 @@ function handleOverview(url: URL): Response {
   const triage_count = count("SELECT COUNT(*) as c FROM ai_events WHERE event_type = 'triage' AND created_at >= ?", sqlite);
   const cancellations = count("SELECT COUNT(*) as c FROM appointments WHERE status = 'cancelled' AND updated_at >= ?", iso);
 
+  // Human-handoff / callback metrics (counts only — never phone numbers).
+  const callbacks_requested = count("SELECT COUNT(*) as c FROM ai_events WHERE event_type = 'callback_requested' AND created_at >= ?", sqlite);
+  const callbacks_pending = countPendingCallbacks();
+
   const ai_booking_conversion = ai_sessions > 0 ? Number(((ai_booked / ai_sessions) * 100).toFixed(1)) : 0;
 
   return json({
@@ -66,6 +71,8 @@ function handleOverview(url: URL): Response {
     faqs_answered,
     triage_count,
     cancellations,
+    callbacks_requested,
+    callbacks_pending,
     ai_booking_conversion,
   });
 }

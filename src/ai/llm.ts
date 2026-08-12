@@ -11,6 +11,7 @@ export type Intent =
   | 'faq'
   | 'triage'
   | 'cancel_reschedule'
+  | 'human_handoff'
   | 'greeting'
   | 'unknown';
 
@@ -127,6 +128,31 @@ const INTENT_PATTERNS: IntentPattern[] = [
     ],
   },
   {
+    intent: 'human_handoff',
+    // "Talk to a human" / "call me back" — English + Roman Urdu. Phrases are
+    // deliberately specific ('insaan se baat', 'kisi se baat') so that
+    // "doctor se baat karni hai" (booking-ish) does not collapse into handoff.
+    keywords_en: ['human', 'agent', 'front desk', 'call me back', 'call back', 'callback',
+      'representative', 'real person', 'customer service', 'someone call'],
+    keywords_ur: ['insaan', 'waapis call', 'wapas call', 'insaan se', 'kisi se baat', 'koi insaan'],
+    phrases_en: [
+      'talk to a human', 'talk to an agent', 'talk to a person', 'talk to someone',
+      'speak to a human', 'speak to an agent', 'speak to a person', 'speak to someone',
+      'talk to the front desk', 'speak to the front desk', 'front desk',
+      'call me back', 'call me back please', 'please call me back', 'someone call me',
+      'have someone call me', 'can someone call me', 'connect me to',
+      'i want to speak to', 'i want to talk to', 'can i speak to', 'can i talk to',
+      'is there a human', 'any human', 'a real person', 'an actual person', 'live agent',
+    ],
+    phrases_ur: [
+      'insaan se baat', 'insaan se baat karni hai', 'insaan se baat karni',
+      'kisi se baat karni hai', 'kisi se baat karni', 'kisi insaan se baat',
+      'kisi se baat kar', 'baat karni hai kisi se',
+      'waapis call', 'wapas call', 'waapis call karo', 'wapas call karo', 'call back karo',
+      'front desk se baat', 'koi insaan', 'aadmi se baat', 'admi se baat',
+    ],
+  },
+  {
     intent: 'greeting',
     keywords_en: ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening', 'salam', 'assalam'],
     keywords_ur: ['hello', 'hi', 'salam', 'assalam', 'adaab', 'salamualaikum'],
@@ -135,8 +161,21 @@ const INTENT_PATTERNS: IntentPattern[] = [
   },
 ];
 
-// ── Entity extractors ──
+/**
+ * Phrase-only handoff detector used to bail out of an in-progress flow.
+ * Requires an explicit handoff PHRASE (e.g. 'talk to a human', 'kisi se baat
+ * karni hai') — a bare keyword like 'human' or 'agent' inside a name or
+ * answer must NOT yank a caller out of a registration/booking flow.
+ */
+export function isHandoffRequest(text: string): boolean {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  const pattern = INTENT_PATTERNS.find((p) => p.intent === 'human_handoff');
+  if (!pattern) return false;
+  return pattern.phrases_en.some((ph) => lower.includes(ph)) || pattern.phrases_ur.some((ph) => lower.includes(ph));
+}
 
+// ── Entity extractors ──
 function extractEntities(text: string): Record<string, string> {
   const entities: Record<string, string> = {};
   const lower = text.toLowerCase();
@@ -232,13 +271,17 @@ export function classifyIntent(text: string): ClassifiedIntent {
       if (lower.includes(phrase)) score += 5;
     }
 
-    // Also check each word against the phrases for partial matching
+    // Also check each word against the keywords for partial matching
+    // (e.g. 'registered' → 'register'). The kw.includes(word) direction is only
+    // credited for words of length >= 3 — tiny function words like 'i', 'to',
+    // 'a' would otherwise match inside many keywords ('timing', 'location',
+    // 'doctor list') and drown out real intent scores.
     for (const word of words) {
       for (const kw of pattern.keywords_en) {
-        if (word.includes(kw) || kw.includes(word)) score += 0.5;
+        if (word.includes(kw) || (kw.includes(word) && word.length >= 3)) score += 0.5;
       }
       for (const kw of pattern.keywords_ur) {
-        if (word.includes(kw) || kw.includes(word)) score += 0.5;
+        if (word.includes(kw) || (kw.includes(word) && word.length >= 3)) score += 0.5;
       }
     }
 
@@ -299,6 +342,7 @@ export async function classifyWithLLM(text: string): Promise<ClassifiedIntent> {
 - faq: User is asking about hospital info (hours, location, fees, services, doctors)
 - triage: User is describing symptoms
 - cancel_reschedule: User wants to cancel or reschedule an appointment
+- human_handoff: User wants to talk to a human (front desk / agent / callback request, e.g. "call me back", "insaan se baat")
 - greeting: User is greeting
 - unknown: Cannot determine intent
 

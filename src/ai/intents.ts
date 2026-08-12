@@ -23,6 +23,13 @@ import type { Patient, Doctor, DoctorSchedule, Appointment } from '../types';
 import { MAX_TURNS, sensitiveVerifier, SENSITIVE_OPERATION_MESSAGE } from '../security';
 import { availableSlots as getAvailableSlots, validateAppointmentInput, validateCalendarDate } from '../appointments/validation';
 import { detectRedFlag } from './safety';
+import { classifyIntent, isHandoffRequest } from './llm';
+import { getHandoffConfig, hoursSlaText } from '../handoff/config';
+import {
+  isValidPhone as isValidCallbackPhone,
+  normalizePhone,
+  createCallbackRequest,
+} from '../handoff/store';
 
 export interface ReceptionistResponse {
   reply: string;
@@ -179,7 +186,7 @@ export async function handleMessage(
     recordAiEvent(state.sessionId, channel, 'triage', { outcome: 'emergency', red_flag: redFlag.category });
     clearSession(state.sessionId);
     return {
-      reply: t('triage_emergency', lang),
+      reply: maybeAppendHandoffOffer(t('triage_emergency', lang), lang),
       session_id: state.sessionId,
       intent: 'triage',
       language: lang,
@@ -187,13 +194,17 @@ export async function handleMessage(
     };
   }
 
-  // If we have an active conversation flow, continue it
+  // If we have an active conversation flow, continue it — unless the caller is
+  // asking for a human/callback right now, in which case they bail out of the
+  // in-progress flow (e.g. mid-booking "bas mujhe waapis call karo").
   if (state.intent !== 'unknown' && state.step !== 'init') {
+    if (isHandoffRequest(message)) {
+      return startHandoff(state, { intent: 'human_handoff', confidence: 1, entities: {} }, message, lang, channel);
+    }
     return continueFlow(state, message, lang, channel);
   }
 
   // Classify the intent
-  const { classifyIntent } = await import('./llm');
   const classified = classifyIntent(message);
 
   // If unknown, return fallback
@@ -248,6 +259,8 @@ async function startFlow(
       return startTriage(state, classified, message, lang, channel);
     case 'cancel_reschedule':
       return startCancelReschedule(state, classified, lang);
+    case 'human_handoff':
+      return startHandoff(state, classified, message, lang, channel);
     default:
       return {
         reply: t('fallback', lang),
@@ -257,6 +270,159 @@ async function startFlow(
         conversation_active: false,
       };
   }
+}
+
+// ── Emergency replies: optional handoff offer ──
+// When callback mode is enabled, the emergency copy is followed by an OFFER to
+// also request a front-desk callback — after the caller has called emergency
+// services. The 1122 instruction and disclaimer are never weakened or reordered.
+function maybeAppendHandoffOffer(reply: string, lang: Language): string {
+  if (getHandoffConfig().mode !== 'callback') return reply;
+  return reply + t('handoff_after_emergency', lang);
+}
+
+// ── Human Handoff / Callback Flow ──
+
+function handoffUnavailableReply(lang: Language): string {
+  const cfg = getHandoffConfig();
+  const phoneLine = cfg.phone
+    ? (lang === 'ur' ? ` Aap ${cfg.phone} par call kar sakte hain.` : ` You can call our front desk directly at ${cfg.phone}.`)
+    : (lang === 'ur' ? ' Aap hospital ke front desk par tashreef la sakte hain.' : ' You can visit our front desk at the hospital.');
+  return t('handoff_unavailable', lang, { phone_line: phoneLine });
+}
+
+// Start of the handoff flow — respects HANDOFF_MODE:
+//  - off (default): honest "not available" reply, nothing recorded, no promise.
+//  - callback: collect phone → optional reason → persist → confirm (no guarantee).
+function startHandoff(
+  state: ConversationState,
+  _classified: ClassifiedIntent,
+  _message: string,
+  lang: Language,
+  _channel: string
+): ReceptionistResponse {
+  if (getHandoffConfig().mode !== 'callback') {
+    clearSession(state.sessionId);
+    return {
+      reply: handoffUnavailableReply(lang),
+      session_id: state.sessionId,
+      intent: 'human_handoff',
+      language: lang,
+      conversation_active: false,
+    };
+  }
+
+  state = updateSession(state.sessionId, {
+    intent: 'human_handoff',
+    language: lang,
+    step: 'ask_phone',
+    collected: {},
+    context: {},
+  });
+
+  return {
+    reply: t('handoff_ask_phone', lang),
+    session_id: state.sessionId,
+    intent: 'human_handoff',
+    language: lang,
+    conversation_active: true,
+  };
+}
+
+async function continueHandoff(
+  state: ConversationState,
+  message: string,
+  lang: Language,
+  channel: string
+): Promise<ReceptionistResponse> {
+  const text = message.trim();
+  const collected = { ...state.collected };
+
+  // Mode switched off mid-conversation → honest refusal, nothing recorded.
+  if (getHandoffConfig().mode !== 'callback') {
+    clearSession(state.sessionId);
+    return {
+      reply: handoffUnavailableReply(lang),
+      session_id: state.sessionId,
+      intent: 'human_handoff',
+      language: lang,
+      conversation_active: false,
+    };
+  }
+
+  if (state.step === 'ask_phone') {
+    // Phone is required — missing/invalid numbers are never accepted and never stored.
+    if (!isValidCallbackPhone(text)) {
+      return {
+        reply: t('reg_invalid_phone', lang),
+        session_id: state.sessionId,
+        intent: 'human_handoff',
+        language: lang,
+        conversation_active: true,
+      };
+    }
+    collected.phone = normalizePhone(text);
+    state = updateSession(state.sessionId, { step: 'ask_reason', collected });
+    return {
+      reply: t('handoff_ask_reason', lang, { phone: collected.phone }),
+      session_id: state.sessionId,
+      intent: 'human_handoff',
+      language: lang,
+      conversation_active: true,
+    };
+  }
+
+  if (state.step === 'ask_reason') {
+    let reason: string | null = null;
+    if (!isNegative(text) && !/^(none|nothing|koi nahi|nhi|skip|skip it)$/i.test(text.trim())) {
+      if (text.length > 200) {
+        return {
+          reply: t('handoff_reason_too_long', lang),
+          session_id: state.sessionId,
+          intent: 'human_handoff',
+          language: lang,
+          conversation_active: true,
+        };
+      }
+      reason = text;
+    }
+
+    // Persist (idempotent: same session/phone → existing pending request).
+    const { request, duplicate } = createCallbackRequest({
+      session_id: state.sessionId,
+      channel,
+      language: lang,
+      phone: collected.phone || '',
+      reason,
+    });
+
+    if (!duplicate) {
+      // Redacted metadata only — never the phone number, never free text.
+      recordAiEvent(state.sessionId, channel, 'callback_requested', {
+        callback_id: request.id,
+        language: lang,
+      });
+    }
+
+    const cfg = getHandoffConfig();
+    const hoursSla = hoursSlaText(cfg, lang);
+    const reply = duplicate
+      ? t('handoff_duplicate', lang, { phone: request.phone, hours_sla: hoursSla })
+      : t('handoff_recorded', lang, { phone: request.phone, hours_sla: hoursSla });
+
+    clearSession(state.sessionId);
+    return {
+      reply,
+      session_id: state.sessionId,
+      intent: 'human_handoff',
+      action: duplicate ? undefined : { type: 'callback_requested', data: { callback_id: request.id } },
+      language: lang,
+      conversation_active: false,
+    };
+  }
+
+  clearSession(state.sessionId);
+  return handleMessage(message, null, lang, channel);
 }
 
 // ── Registration Flow ──
@@ -321,6 +487,8 @@ async function continueFlow(
       return continueTriage(state, message, lang, channel);
     case 'cancel_reschedule':
       return continueCancelReschedule(state, message, lang, channel);
+    case 'human_handoff':
+      return continueHandoff(state, message, lang, channel);
     default:
       // Restart classification
       clearSession(state.sessionId);
@@ -1058,7 +1226,7 @@ function startTriage(
     recordAiEvent(state.sessionId, channel, 'triage', { outcome: 'emergency', red_flag: redFlag.category });
     clearSession(state.sessionId);
     return Promise.resolve({
-      reply: t('triage_emergency', lang),
+      reply: maybeAppendHandoffOffer(t('triage_emergency', lang), lang),
       session_id: state.sessionId,
       intent: 'triage',
       language: lang,
@@ -1113,7 +1281,7 @@ async function continueTriage(
       recordAiEvent(state.sessionId, channel, 'triage', { severity, outcome: 'emergency' });
       clearSession(state.sessionId);
       return {
-        reply: t('triage_emergency', lang),
+        reply: maybeAppendHandoffOffer(t('triage_emergency', lang), lang),
         session_id: state.sessionId,
         intent: 'triage',
         language: lang,

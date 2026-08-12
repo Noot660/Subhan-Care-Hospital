@@ -135,6 +135,13 @@ export const CANCEL_RESCHEDULE_STEPS = [
   'confirm_reschedule',
 ];
 
+// Human handoff / callback flow — phone (required), optional short reason.
+export const HANDOFF_STEPS = [
+  'ask_phone',
+  'ask_reason',
+  'done',
+];
+
 export function getNextStep(steps: string[], currentStep: string): string | null {
   const idx = steps.indexOf(currentStep);
   if (idx === -1 || idx >= steps.length - 1) return null;

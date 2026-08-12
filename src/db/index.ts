@@ -213,7 +213,27 @@ function initSchema(database: Database): void {
       details TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS callback_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT,
+      channel TEXT NOT NULL DEFAULT 'chat',
+      language TEXT NOT NULL DEFAULT 'en' CHECK(language IN ('en','ur')),
+      phone TEXT NOT NULL,
+      reason TEXT,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','contacted','closed')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
+
+  // Only one PENDING request per phone — idempotent callback submissions.
+  // Contacted/closed rows free the phone so a NEW request can be made later.
+  database.exec(`CREATE UNIQUE INDEX IF NOT EXISTS callback_requests_active_phone_unique ON callback_requests(phone) WHERE status = 'pending'`);
+  // Admin queue reads filter by status + recency.
+  database.exec(`CREATE INDEX IF NOT EXISTS callback_requests_status_idx ON callback_requests(status, created_at)`);
+  // Same-session dedupe lookup.
+  database.exec(`CREATE INDEX IF NOT EXISTS callback_requests_session_idx ON callback_requests(session_id)`);
 
   // Only active appointments participate in uniqueness; cancelled/no-show slots can be reused.
   database.exec(`CREATE UNIQUE INDEX IF NOT EXISTS appointments_active_slot_unique ON appointments(doctor_id, date, start_time) WHERE status IN ('scheduled', 'checked-in', 'completed')`);

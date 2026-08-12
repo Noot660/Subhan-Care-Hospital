@@ -107,6 +107,7 @@ const ICONS = {
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5 21 21"/></svg>',
   bot: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 4v4M8.5 13h.01M15.5 13h.01M9 17h6"/><path d="M2 12v4M22 12v4"/></svg>',
   chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg>',
+  phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 2 .7 2.9a2 2 0 0 1-.4 2.1L8 10a16 16 0 0 0 6 6l1.3-1.4a2 2 0 0 1 2.1-.4c.9.3 1.9.6 2.9.7a2 2 0 0 1 1.7 2Z"/></svg>',
   logout: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>',
 };
 
@@ -118,6 +119,7 @@ const navConfig = {
     { id: 'doctors', label: 'Doctors', icon: 'doctor', hash: '#/dashboard/admin/doctors' },
     { id: 'appointments', label: 'Appointments', icon: 'calendar', hash: '#/dashboard/admin/appointments' },
     { id: 'aiops', label: 'AI Ops', icon: 'bot', hash: '#/dashboard/admin/aiops' },
+    { id: 'callbacks', label: 'Callbacks', icon: 'phone', hash: '#/dashboard/admin/callbacks' },
     { id: 'analytics', label: 'Analytics', icon: 'chart', hash: '#/dashboard/admin/analytics' },
     { id: 'consultations', label: 'Consultations', icon: 'clipboard', hash: '#/dashboard/admin/consultations' },
     { id: 'staff', label: 'Staff', icon: 'users', hash: '#/dashboard/admin/staff' },
@@ -154,6 +156,7 @@ const navTitles = {
   'admin:doctors': ['Doctor Management', 'HMS / Doctors'],
   'admin:appointments': ['All Appointments', 'HMS / Appointments'],
   'admin:aiops': ['AI Operations', 'HMS / AI Ops'],
+  'admin:callbacks': ['Callback Queue', 'HMS / Callbacks'],
   'admin:analytics': ['Analytics', 'HMS / Analytics'],
   'admin:consultations': ['Consultations', 'HMS / Consultations'],
   'admin:staff': ['Staff Management', 'HMS / Staff'],
@@ -186,6 +189,7 @@ function sectionKey(hash, role) {
     : (role === 'admin' && section === 'doctors') ? 'doctors'
     : (role === 'admin' && section === 'appointments') ? 'appointments'
     : (role === 'admin' && section === 'aiops') ? 'aiops'
+    : (role === 'admin' && section === 'callbacks') ? 'callbacks'
     : (role === 'admin' && section === 'analytics') ? 'analytics'
     : (role === 'admin' && section === 'consultations') ? 'consultations'
     : (role === 'admin' && section === 'staff') ? 'staff'
@@ -275,6 +279,7 @@ const renderers = {
     doctors: renderDoctorsView,
     appointments: renderAppointmentsView,
     aiops: renderAiOpsView,
+    callbacks: renderCallbacksView,
     analytics: renderAnalyticsView,
     consultations: renderConsultationsView,
     staff: renderStaffView,
@@ -724,6 +729,8 @@ const EVENT_LABELS = {
   appointment_cancelled: 'Appointment cancelled',
   appointment_rescheduled: 'Appointment rescheduled',
   appointments_list: 'Appointment check',
+  callback_requested: 'Callback requested',
+  callback_status_updated: 'Callback status updated',
 };
 const EVENT_ICONS = {
   appointment_created: '📅',
@@ -733,6 +740,8 @@ const EVENT_ICONS = {
   appointment_cancelled: '❌',
   appointment_rescheduled: '🔁',
   appointments_list: '📋',
+  callback_requested: '📞',
+  callback_status_updated: '📞',
 };
 
 function eventDetailsText(ev) {
@@ -750,6 +759,10 @@ function eventDetailsText(ev) {
     }
     case 'appointments_list':
       return `${d.count || 0} appointment(s) for patient ${d.patient_id || ''}`;
+    case 'callback_requested':
+      return `Callback request #${d.callback_id || ''} (${d.language || 'en'})`;
+    case 'callback_status_updated':
+      return `Callback #${d.callback_id || ''} → ${d.to_status || ''}`;
     default:
       try { return JSON.stringify(d); } catch { return ''; }
   }
@@ -863,6 +876,10 @@ async function renderAiOpsView() {
             <div><span class="stats-value">${o.patients_registered_via_ai ?? 0}</span><span class="stats-label">Patients via AI</span></div></div>
           <div class="stats-card st-amber"><div class="stats-icon" style="background:rgba(245,158,11,0.14);color:#fcd34d">🧵</div>
             <div><span class="stats-value">${o.ai_sessions ?? 0}</span><span class="stats-label">AI Sessions</span></div></div>
+          <div class="stats-card st-blue"><div class="stats-icon" style="background:rgba(59,130,246,0.14);color:#93c5fd">📞</div>
+            <div><span class="stats-value">${o.callbacks_requested ?? 0}</span><span class="stats-label">Callbacks (Today)</span></div></div>
+          <div class="stats-card st-amber"><div class="stats-icon" style="background:rgba(245,158,11,0.14);color:#fcd34d">⏳</div>
+            <div><span class="stats-value">${o.callbacks_pending ?? 0}</span><span class="stats-label">Pending Callbacks</span></div></div>
           <div class="stats-card st-purple"><div class="stats-icon" style="background:rgba(167,139,250,0.14);color:#c4b5fd">⚡</div>
             <div><span class="stats-value">${o.ai_booking_conversion ?? 0}%</span><span class="stats-label">Booking Conversion</span></div></div>
         </div>`;
@@ -920,6 +937,95 @@ async function renderAiOpsView() {
 
   await Promise.all([renderKpis(), renderFeed()]);
   startAutoRefresh(async () => { await Promise.all([renderKpis(), renderFeed()]); markUpdated(); }, 25_000);
+}
+
+// ── Admin: Callback Queue (pending front-desk callbacks) ──
+async function renderCallbacksView() {
+  content.innerHTML = `
+    <div class="section-head">
+      <div><h3>Callback Queue</h3><div class="sub">Callback requests from the AI receptionist · phone numbers masked for privacy</div></div>
+      <div class="filter-chips" id="cbStatusChips">
+        <button class="chip active" data-key="pending">⏳ Pending</button>
+        <button class="chip" data-key="contacted">📞 Contacted</button>
+        <button class="chip" data-key="closed">✅ Closed</button>
+        <button class="chip" data-key="">All</button>
+      </div>
+    </div>
+    <div id="cbList">${skeletonTable(5)}</div>
+  `;
+
+  const listEl = document.getElementById('cbList');
+  const chips = document.getElementById('cbStatusChips');
+  let activeStatus = 'pending';
+
+  const renderList = async () => {
+    listEl.innerHTML = skeletonTable(5);
+    try {
+      const data = await api.listCallbacks(activeStatus ? { status: activeStatus, limit: 100 } : { limit: 100 });
+      const requests = data.requests || [];
+      listEl.innerHTML = '';
+      if (!requests.length) {
+        listEl.appendChild(emptyState('📞', 'No callback requests', activeStatus ? `No ${activeStatus} requests right now.` : 'No callback requests recorded yet.'));
+        return;
+      }
+      const wrap = document.createElement('div');
+      wrap.className = 'table-wrap';
+      wrap.appendChild(createTable(
+        ['ID', 'Phone (masked)', 'Language', 'Channel', 'Reason', 'Requested', 'Status', 'Actions'],
+        requests.map(r => {
+          const statusCls = r.status === 'pending' ? 'badge-amber' : r.status === 'contacted' ? 'badge-blue' : 'badge-gray';
+          const canContact = r.status === 'pending';
+          const canClose = r.status === 'pending' || r.status === 'contacted';
+          const actions = [
+            canContact ? `<button class="btn btn-primary btn-sm" data-act="contacted" data-id="${r.id}">Mark contacted</button>` : '',
+            canClose ? `<button class="btn btn-secondary btn-sm" data-act="closed" data-id="${r.id}">Close</button>` : '',
+          ].filter(Boolean).join(' ');
+          return [
+            `#${r.id}`,
+            `<code>${esc(r.phone_masked)}</code>`,
+            r.language === 'ur' ? 'اردو' : 'EN',
+            r.channel || '—',
+            esc(r.reason || '—'),
+            relTime(r.created_at),
+            `<span class="badge ${statusCls}">${esc(r.status)}</span>`,
+            actions || '—',
+          ];
+        }),
+      ));
+      listEl.appendChild(wrap);
+    } catch (err) {
+      listEl.innerHTML = '';
+      listEl.appendChild(errorBanner('Could not load callback queue — ' + err.message, renderList));
+    }
+  };
+
+  listEl.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-act]');
+    if (!btn) return;
+    const { act, id } = btn.dataset;
+    btn.disabled = true;
+    try {
+      await api.updateCallbackStatus(Number(id), act);
+      showToast(`Callback #${id} marked ${act}`);
+      await renderList();
+      markUpdated();
+    } catch (err) {
+      showToast(err.message || 'Update failed', 'error');
+      btn.disabled = false;
+    }
+  });
+
+  chips.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    chips.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    activeStatus = chip.dataset.key;
+    renderList();
+  });
+
+  await renderList();
+  startAutoRefresh(renderList, 30_000);
 }
 
 // ── Admin: Analytics (KPIs + channel breakdown, period selector) ──
