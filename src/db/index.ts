@@ -215,6 +215,9 @@ function initSchema(database: Database): void {
     );
   `);
 
+  // Only active appointments participate in uniqueness; cancelled/no-show slots can be reused.
+  database.exec(`CREATE UNIQUE INDEX IF NOT EXISTS appointments_active_slot_unique ON appointments(doctor_id, date, start_time) WHERE status IN ('scheduled', 'checked-in', 'completed')`);
+
   // ── Migrations (safe for pre-existing databases) ──
   // M1: appointments.source — added later; existing DBs lack the column.
   const appointmentCols = database.query("PRAGMA table_info(appointments)").all() as Array<{ name: string }>;

@@ -3,30 +3,27 @@ import { json, error, parseBody, matchPath } from "../middleware/http";
 import { extractToken, validateSession } from "../middleware/auth";
 import { auditLog } from "../middleware/audit";
 import type { Appointment } from "../types";
+import { availableSlots, validateAppointmentInput } from "../appointments/validation";
 
 async function handleCreateAppointment(request: Request): Promise<Response> {
+  let conflictDoctor = 0;
+  let conflictDate = "";
   try {
     const body = await parseBody<{ patient_id: number; doctor_id: number; date: string; start_time: string; source?: string }>(request);
     if (!body.patient_id || !body.doctor_id || !body.date || !body.start_time) return error("Missing required fields: patient_id, doctor_id, date, start_time", 400);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(body.date)) return error("Invalid date format. Use YYYY-MM-DD", 400);
-    if (!/^\d{2}:\d{2}$/.test(body.start_time)) return error("Invalid time format. Use HH:MM", 400);
     const source = body.source || "staff";
     if (!["staff", "chat", "voice", "twilio"].includes(source)) return error("Invalid source. Must be one of: staff, chat, voice, twilio", 400);
     const db = getDb();
+    conflictDoctor = body.doctor_id;
+    conflictDate = body.date;
     if (!db.query("SELECT * FROM patients WHERE id = ? AND status = 'active'").get(body.patient_id)) return error("Patient not found or inactive", 404);
     if (!db.query("SELECT * FROM doctors WHERE id = ? AND status = 'active'").get(body.doctor_id)) return error("Doctor not found or inactive", 404);
-    const [h, m] = body.start_time.split(":").map(Number);
-    let endH = h, endM = m + 30;
-    if (endM >= 60) { endH += 1; endM -= 60; }
-    const endTime = `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
-    const dayOfWeek = new Date(body.date + "T00:00:00").getDay();
-    if (!db.query("SELECT * FROM doctor_schedules WHERE doctor_id = ? AND day_of_week = ? AND start_time <= ? AND end_time >= ?").get(body.doctor_id, dayOfWeek, body.start_time, endTime)) {
-      return error("Doctor is not available at this time slot", 400);
-    }
-    if (db.query(`SELECT id FROM appointments WHERE doctor_id = ? AND date = ? AND start_time = ? AND status NOT IN ('cancelled', 'no-show')`).get(body.doctor_id, body.date, body.start_time)) {
-      return error("This time slot is already booked", 409);
-    }
+    const inputValidation = validateAppointmentInput(db, body.doctor_id, body.date, body.start_time);
+    if (!inputValidation.ok) return error(inputValidation.message, 400);
+    const endTime = inputValidation.endTime;
     const now = new Date().toISOString();
+    // The partial unique index (appointments_active_slot_unique) makes this
+    // INSERT atomic against concurrent bookings of the same doctor/date/slot.
     const result = db.run(
       `INSERT INTO appointments (patient_id, doctor_id, date, start_time, end_time, status, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'scheduled', ?, ?, ?)`,
       [body.patient_id, body.doctor_id, body.date, body.start_time, endTime, source, now, now]
@@ -36,6 +33,12 @@ async function handleCreateAppointment(request: Request): Promise<Response> {
     if (session) auditLog({ user_id: session.user_id, action: "create", entity_type: "appointment", entity_id: String(result.lastInsertRowid), details: { patient_id: body.patient_id, doctor_id: body.doctor_id, date: body.date, start_time: body.start_time, source } });
     return json(db.query("SELECT * FROM appointments WHERE id = ?").get(Number(result.lastInsertRowid)) as Appointment, 201);
   } catch (err) {
+    // Lost a race for the same slot → tell the caller which slots are still live.
+    if (String(err).toLowerCase().includes("unique")) {
+      const db = getDb();
+      const slots = conflictDoctor && conflictDate ? availableSlots(db, conflictDoctor, conflictDate).map((s) => s.start_time) : [];
+      return error(`This slot was just booked. Available slots: ${slots.join(", ") || "Please choose another date or doctor."}`, 409);
+    }
     return error(err instanceof Error ? err.message : "Bad request", 400);
   }
 }
@@ -77,6 +80,9 @@ async function handleUpdateAppointmentStatus(request: Request, id: string): Prom
 }
 
 async function handleRescheduleAppointment(request: Request, id: string): Promise<Response> {
+  let rescheduleDoctor = 0;
+  let rescheduleDate = "";
+  let rescheduleApptId = 0;
   try {
     const body = await parseBody<{ date: string; start_time: string; reason?: string }>(request);
     if (!body.date || !body.start_time) return error("date and start_time are required", 400);
@@ -84,21 +90,30 @@ async function handleRescheduleAppointment(request: Request, id: string): Promis
     const existing = db.query("SELECT * FROM appointments WHERE id = ?").get(Number(id)) as Appointment | undefined;
     if (!existing) return error("Appointment not found", 404);
     if (existing.status === "cancelled") return error("Cannot reschedule a cancelled appointment", 400);
-    const [h, m] = body.start_time.split(":").map(Number);
-    let endH = h, endM = m + 30;
-    if (endM >= 60) { endH += 1; endM -= 60; }
-    const endTime = `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
-    if (db.query(`SELECT id FROM appointments WHERE doctor_id = ? AND date = ? AND start_time = ? AND id != ? AND status NOT IN ('cancelled', 'no-show')`).get(existing.doctor_id, body.date, body.start_time, Number(id))) {
-      return error("The new time slot is already booked", 409);
+    const validation = validateAppointmentInput(db, existing.doctor_id, body.date, body.start_time);
+    if (!validation.ok) return error(validation.message, 400);
+    rescheduleDoctor = existing.doctor_id;
+    rescheduleDate = body.date;
+    rescheduleApptId = Number(id);
+    if (db.query(`SELECT id FROM appointments WHERE doctor_id = ? AND date = ? AND start_time = ? AND id != ? AND status IN ('scheduled', 'checked-in', 'completed')`).get(existing.doctor_id, body.date, body.start_time, Number(id))) {
+      const slots = availableSlots(db, existing.doctor_id, body.date, Number(id)).map((s) => s.start_time);
+      return error(`This slot was just booked. Available slots: ${slots.join(", ") || "Please choose another date or doctor."}`, 409);
     }
+    const endTime = validation.endTime;
     const now = new Date().toISOString();
     const reason = body.reason || "Rescheduled";
+    // Same unique index backstops a concurrent reschedule into this slot.
     db.run("UPDATE appointments SET date = ?, start_time = ?, end_time = ?, cancellation_reason = ?, updated_at = ? WHERE id = ?", [body.date, body.start_time, endTime, reason, now, Number(id)]);
     const token = extractToken(request);
     const session = validateSession(token || "");
     if (session) auditLog({ user_id: session.user_id, action: "reschedule", entity_type: "appointment", entity_id: id, details: { old_date: existing.date, old_time: existing.start_time, new_date: body.date, new_time: body.start_time, reason } });
     return json(db.query("SELECT * FROM appointments WHERE id = ?").get(Number(id)) as Appointment);
   } catch (err) {
+    if (String(err).toLowerCase().includes("unique")) {
+      const db = getDb();
+      const slots = rescheduleDoctor ? availableSlots(db, rescheduleDoctor, rescheduleDate, rescheduleApptId).map((s) => s.start_time) : [];
+      return error(`This slot was just booked. Available slots: ${slots.join(", ") || "Please choose another date or doctor."}`, 409);
+    }
     return error(err instanceof Error ? err.message : "Bad request", 400);
   }
 }
