@@ -179,6 +179,10 @@ const strings: Record<string, Record<Language, string>> = {
     en: "How long have you been experiencing this? (e.g., '2 hours', '3 days', '1 week')",
     ur: "Kitne arse se hai? Misaal: '2 ghante', '3 din', '1 hafta'",
   },
+  triage_severity_invalid: {
+    en: "❌ Please give me a number from 1 to 10 for how severe this is (1 = mild, 10 = extremely severe).",
+    ur: "❌ Baraye meherbani 1 se 10 tak ka number batayein (1 = halka, 10 = bohot zyada).",
+  },
   triage_emergency: {
     en: "🚨 **URGENT**: Based on what you've described, this sounds like it could be serious. Please seek emergency care immediately.\n\n📞 Emergency: **1122**\n🏥 Subhan Care Emergency: Open 24/7\n\n⚠️ *Disclaimer: I am an AI assistant, not a doctor. If this is an emergency, please call emergency services immediately.*",
     ur: "🚨 **EMERGENCY**: Yeh serious ho sakta hai. Foran emergency care lein.\n\n📞 Emergency: **1122**\n🏥 Subhan Care Emergency: 24/7 khuli hai\n\n⚠️ *Main AI hoon, doctor nahi. Emergency mein 1122 call karein.*",
