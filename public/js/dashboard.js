@@ -120,6 +120,7 @@ const navConfig = {
     { id: 'appointments', label: 'Appointments', icon: 'calendar', hash: '#/dashboard/admin/appointments' },
     { id: 'aiops', label: 'AI Ops', icon: 'bot', hash: '#/dashboard/admin/aiops' },
     { id: 'callbacks', label: 'Callbacks', icon: 'phone', hash: '#/dashboard/admin/callbacks' },
+    { id: 'audit', label: 'Audit Log', icon: 'history', hash: '#/dashboard/admin/audit' },
     { id: 'analytics', label: 'Analytics', icon: 'chart', hash: '#/dashboard/admin/analytics' },
     { id: 'consultations', label: 'Consultations', icon: 'clipboard', hash: '#/dashboard/admin/consultations' },
     { id: 'staff', label: 'Staff', icon: 'users', hash: '#/dashboard/admin/staff' },
@@ -157,6 +158,7 @@ const navTitles = {
   'admin:appointments': ['All Appointments', 'HMS / Appointments'],
   'admin:aiops': ['AI Operations', 'HMS / AI Ops'],
   'admin:callbacks': ['Callback Queue', 'HMS / Callbacks'],
+  'admin:audit': ['Security Audit Log', 'HMS / Audit Log'],
   'admin:analytics': ['Analytics', 'HMS / Analytics'],
   'admin:consultations': ['Consultations', 'HMS / Consultations'],
   'admin:staff': ['Staff Management', 'HMS / Staff'],
@@ -190,6 +192,7 @@ function sectionKey(hash, role) {
     : (role === 'admin' && section === 'appointments') ? 'appointments'
     : (role === 'admin' && section === 'aiops') ? 'aiops'
     : (role === 'admin' && section === 'callbacks') ? 'callbacks'
+    : (role === 'admin' && section === 'audit') ? 'audit'
     : (role === 'admin' && section === 'analytics') ? 'analytics'
     : (role === 'admin' && section === 'consultations') ? 'consultations'
     : (role === 'admin' && section === 'staff') ? 'staff'
@@ -280,6 +283,7 @@ const renderers = {
     appointments: renderAppointmentsView,
     aiops: renderAiOpsView,
     callbacks: renderCallbacksView,
+    audit: renderAuditView,
     analytics: renderAnalyticsView,
     consultations: renderConsultationsView,
     staff: renderStaffView,
@@ -2314,6 +2318,15 @@ async function renderBillingCollections() {
   await Promise.all([renderSummary('today'), renderList('today')]);
 }
 
+async function renderAuditView() {
+  content.innerHTML = `<div class="section-head"><div><h3>Security audit log</h3><div class="sub">Redacted authentication and access events</div></div></div>
+    <div class="filter-bar" style="display:flex;gap:8px;flex-wrap:wrap;margin:16px 0"><select id="auditAction"><option value="">All events</option><option value="auth_login_success">Successful login</option><option value="auth_login_failure">Failed login</option><option value="auth_login_blocked">Blocked login</option><option value="auth_lockout">Lockout</option></select><input id="auditFrom" type="date"><input id="auditTo" type="date"><button class="btn btn-primary" id="auditApply">Filter</button></div><div id="auditList">${skeletonTable(5)}</div><div id="auditPages" class="pagination" style="margin-top:16px"></div>`;
+  let page = 1;
+  const load = async () => { const q = { page, limit: 25 }; const action = document.getElementById('auditAction').value; const from = document.getElementById('auditFrom').value; const to = document.getElementById('auditTo').value; if (action) q.action=action; if(from)q.from=from;if(to)q.to=to; const data=await api.listAudit(q); const list=document.getElementById('auditList');
+    if (!data.logs?.length) { list.innerHTML=emptyState('🛡️','No audit events','No events match these filters.'); } else { const rows=data.logs.map(x=>({cells:[esc(x.created_at),esc(x.action),esc(x.entity_type),esc(x.user_ref)]})); const wrap=document.createElement('div');wrap.className='table-wrap';wrap.appendChild(createTable(['Time','Event','Area','Actor'],rows));list.innerHTML='';list.appendChild(wrap); }
+    const p=document.getElementById('auditPages'); p.innerHTML=`<button class="btn btn-outline btn-sm" ${data.pagination.page<=1?'disabled':''} id="auditPrev">Previous</button> <span class="text-muted">Page ${data.pagination.page} of ${Math.max(1,data.pagination.pages)} · ${data.pagination.total} events</span> <button class="btn btn-outline btn-sm" ${data.pagination.page>=data.pagination.pages?'disabled':''} id="auditNext">Next</button>`; document.getElementById('auditPrev').onclick=()=>{if(page>1){page--;load();}};document.getElementById('auditNext').onclick=()=>{if(page<data.pagination.pages){page++;load();}};
+  }; document.getElementById('auditApply').onclick=()=>{page=1;load();}; await load();
+}
 // ═══════════════════════════════════════════════════════════
 // BOOT
 // ═══════════════════════════════════════════════════════════

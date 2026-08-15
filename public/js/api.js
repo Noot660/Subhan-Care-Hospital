@@ -251,6 +251,11 @@ export const api = {
     });
   },
 
+  // Authentication audit (admin only; server returns redacted fields)
+  listAudit(params = {}) {
+    const qs = new URLSearchParams(params).toString();
+    return request(`/api/audit${qs ? '?' + qs : ''}`);
+  },
   // Staff management (admin only)
   listStaff() {
     return request('/api/staff');
