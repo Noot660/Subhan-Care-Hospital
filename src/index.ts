@@ -19,6 +19,7 @@ import { handleConsultations } from "./routes/consultations";
 import { handleAnalytics } from "./routes/analytics";
 import { handleStaff } from "./routes/staff";
 import { handleCallbacks } from "./routes/callbacks";
+import { handleAudit } from "./routes/audit";
 
 // Whitelist of endpoints that don't require authentication
 const PUBLIC_ENDPOINTS = [
@@ -216,6 +217,10 @@ async function handleRequest(request: Request): Promise<Response> {
   }
 
   // Callback queue — RBAC module "callbacks" (admin only)
+  if (pathname.startsWith("/api/audit")) {
+    return handleAudit(request);
+  }
+
   if (pathname.startsWith("/api/callbacks")) {
     return handleCallbacks(request);
   }
