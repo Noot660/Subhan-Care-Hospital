@@ -98,7 +98,7 @@ function serveStatic(pathname: string): Response | null {
 
 const PORT = 3000;
 
-async function handleRequest(request: Request): Promise<Response> {
+export async function handleRequest(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const pathname = url.pathname;
 
@@ -240,6 +240,7 @@ async function handleRequest(request: Request): Promise<Response> {
 }
 
 // Initialize database on startup
+if (import.meta.main) {
 console.log("🗄️  Initializing database...");
 getDb();
 console.log("✅ Database ready");
@@ -267,3 +268,4 @@ process.on("SIGTERM", () => {
   server.stop();
   process.exit(0);
 });
+}
