@@ -20,7 +20,7 @@ const auditRows = (action?: string) => handleAudit(new Request(`http://test/api/
 
 beforeEach(() => resetAuthLimitState());
 afterAll(() => {
-  db.run('DELETE FROM audit_logs WHERE entity_id = ? OR (user_id = ? AND action LIKE \'auth_%\')', ['anonymous', staffId]);
+  db.run("DELETE FROM audit_logs WHERE entity_id = ? OR (user_id = ? AND action LIKE 'auth_%') OR action = 'date_filter_probe'", ['anonymous', staffId]);
   if (staffId) db.run('DELETE FROM staff WHERE id = ?', [staffId]);
 });
 
@@ -88,6 +88,11 @@ describe.serial('authentication audit and lockout controls', () => {
     expect(all.status).toBe(200);
     const page = await all.json() as { logs: unknown[]; pagination: { page: number; limit: number } };
     expect(page.pagination).toMatchObject({ page: 1, limit: 1 });
+    db.run("INSERT INTO audit_logs (user_id, action, entity_type, entity_id, details, created_at) VALUES (0, 'date_filter_probe', 'authentication', 'anonymous', '{}', '2020-01-15 12:00:00')");
+    const dateFiltered = await handleAudit(new Request('http://test/api/audit?from=2020-01-15&to=2020-01-15&action=date_filter_probe'));
+    expect(dateFiltered.status).toBe(200);
+    const dateBody = await dateFiltered.json() as { logs: Array<Record<string, unknown>> };
+    expect(dateBody.logs).toHaveLength(1);
     const filtered = await auditRows('auth_login_failure');
     expect(filtered.status).toBe(200);
     const body = await filtered.json() as { logs: Array<Record<string, unknown>> };
