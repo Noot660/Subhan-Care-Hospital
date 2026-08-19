@@ -1,8 +1,8 @@
 import { getDb } from "../db";
 import { json, error, parseBody, matchPath } from "../middleware/http";
-import { extractToken, validateSession } from "../middleware/auth";
+import { extractToken, validateSession, hasPermission } from "../middleware/auth";
 import { auditLog } from "../middleware/audit";
-import type { Patient } from "../types";
+import type { Patient, Role } from "../types";
 
 function generatePatientId(db: ReturnType<typeof getDb>): string {
   const last = db.query("SELECT patient_id FROM patients ORDER BY id DESC LIMIT 1").get() as { patient_id: string } | undefined;
@@ -184,6 +184,14 @@ async function handleDeactivatePatient(request: Request, id: string): Promise<Re
 }
 
 export async function handlePatients(request: Request): Promise<Response> {
+  const token = extractToken(request);
+  if (!token) return error("Unauthorized — missing authentication token", 401);
+  const session = validateSession(token);
+  if (!session) return error("Unauthorized — invalid or expired session", 401);
+
+  const allowed = hasPermission(session.role as Role, "patients", request.method);
+  if (!allowed) return error("Forbidden — insufficient permissions at data-access level", 403);
+
   const url = new URL(request.url);
   const pathname = url.pathname;
   const deactivateMatch = matchPath("/api/patients/:id/deactivate", pathname);

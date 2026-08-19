@@ -2,15 +2,15 @@
 /* Professional medical aesthetic: clean whites, calming blues */
 
 :root {
-  --primary: #1e40af;
-  --primary-light: #3b82f6;
-  --primary-dark: #1e3a8a;
-  --primary-bg: #eff6ff;
-  --accent: #0891b2;
-  --success: #16a34a;
-  --success-bg: #f0fdf4;
-  --warning: #ea580c;
-  --warning-bg: #fff7ed;
+  --primary: #0f172a;
+  --primary-light: #0d9488;
+  --primary-dark: #1e293b;
+  --primary-bg: #f0fdfa;
+  --accent: #0d9488;
+  --success: #059669;
+  --success-bg: #ecfdf5;
+  --warning: #d97706;
+  --warning-bg: #fef3c7;
   --danger: #dc2626;
   --danger-bg: #fef2f2;
   --gray-50: #f8fafc;
@@ -23,8 +23,8 @@
   --gray-700: #334155;
   --gray-800: #1e293b;
   --gray-900: #0f172a;
-  --radius: 8px;
-  --radius-lg: 12px;
+  --radius: 12px;
+  --radius-lg: 16px;
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
   --shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
   --shadow-md: 0 4px 6px rgba(0,0,0,0.07), 0 2px 4px rgba(0,0,0,0.06);
@@ -32,17 +32,17 @@
   --transition: 0.2s ease;
 
   /* Premium dark theme tokens (used by login & dashboard pages) */
-  --bg-start: #0a0f1e;
-  --bg-end: #0d1529;
-  --surface: rgba(255,255,255,0.04);
-  --surface-hover: rgba(255,255,255,0.07);
-  --text: #e0e0e0;
-  --text-dim: #7a7f8c;
-  --blue: #3b82f6;
-  --blue-glow: rgba(59,130,246,0.4);
-  --green: #22c55e;
-  --amber: #f59e0b;
-  --red: #ef4444;
+  --bg-start: #f8fafc;
+  --bg-end: #f1f5f9;
+  --surface: #ffffff;
+  --surface-hover: #f1f5f9;
+  --text: #0f172a;
+  --text-dim: #64748b;
+  --blue: #0d9488;
+  --blue-glow: rgba(13, 148, 136, 0.15);
+  --green: #059669;
+  --amber: #d97706;
+  --red: #dc2626;
 }
 
 /* ── Reset & Base ── */
@@ -51,7 +51,7 @@
 html { font-size: 16px; scroll-behavior: smooth; }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans', 'Noto Nastaliq Urdu', sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   color: var(--gray-800);
   background: var(--gray-50);
   line-height: 1.6;
@@ -113,7 +113,7 @@ h4 { font-size: 1rem; font-weight: 600; }
 }
 .form-field input:focus, .form-field select:focus, .form-field textarea:focus {
   outline: none; border-color: var(--primary-light);
-  box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.2);
 }
 .form-field textarea { resize: vertical; min-height: 80px; }
 .form-field .form-help { display: block; margin-top: 0.25rem; color: var(--gray-400); }

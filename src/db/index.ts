@@ -269,6 +269,13 @@ function initSchema(database: Database): void {
       expires_at TEXT NOT NULL,
       used INTEGER DEFAULT 0
     );
+
+    CREATE TABLE IF NOT EXISTS procedures (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      price REAL NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active'
+    );
   `);
 
   // Only one PENDING request per phone — idempotent callback submissions.
@@ -293,6 +300,14 @@ function initSchema(database: Database): void {
   const sessionCols = database.query("PRAGMA table_info(sessions)").all() as Array<{ name: string }>;
   if (!sessionCols.some((c) => c.name === "last_active_at")) {
     database.exec("ALTER TABLE sessions ADD COLUMN last_active_at TEXT NOT NULL DEFAULT '2026-08-19T00:00:00.000Z'");
+  }
+
+  // Seed default procedures
+  const proceduresCount = (database.query("SELECT COUNT(*) as c FROM procedures").get() as { c: number } | undefined)?.c ?? 0;
+  if (proceduresCount === 0) {
+    database.run("INSERT INTO procedures (name, price) VALUES ('X-Ray', 1500.0)");
+    database.run("INSERT INTO procedures (name, price) VALUES ('Complete Blood Count (CBC)', 800.0)");
+    database.run("INSERT INTO procedures (name, price) VALUES ('Procedural Dressing', 500.0)");
   }
 }
 

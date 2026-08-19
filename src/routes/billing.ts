@@ -1,8 +1,8 @@
 import { getDb } from "../db";
 import { json, error, parseBody, matchPath } from "../middleware/http";
-import { extractToken, validateSession } from "../middleware/auth";
+import { extractToken, validateSession, hasPermission } from "../middleware/auth";
 import { auditLog } from "../middleware/audit";
-import type { Invoice } from "../types";
+import type { Invoice, Role } from "../types";
 import { calculateTotalQuantity } from "./pharmacy";
 
 function getUserId(request: Request): number | null {
@@ -178,11 +178,17 @@ async function handleCreateInvoice(request: Request): Promise<Response> {
           const medName = desc.trim();
           const med = db.query("SELECT unit_cost FROM medicines WHERE LOWER(name) = LOWER(?)").get(medName) as { unit_cost: number } | undefined;
           price = med ? med.unit_cost : 0;
+        } else if (type === "procedure" || type === "supplementary") {
+          const procName = desc.trim();
+          const proc = db.query("SELECT price FROM procedures WHERE LOWER(name) = LOWER(?)").get(procName) as { price: number } | undefined;
+          if (proc) {
+            price = proc.price;
+          }
         }
 
         itemsToInsert.push({
           description: desc,
-          type,
+          type: type === "procedure" ? "supplementary" : type,
           quantity: qty,
           unit_price: price
         });
@@ -390,6 +396,40 @@ async function handlePatientOutstandingBalance(request: Request, id: string): Pr
   });
 }
 
+// GET /api/billing/procedures
+async function handleListProcedures(request: Request): Promise<Response> {
+  const db = getDb();
+  const list = db.query("SELECT * FROM procedures WHERE status = 'active' ORDER BY name").all();
+  return json(list);
+}
+
+// POST /api/billing/procedures { name, price }
+async function handleCreateProcedure(request: Request): Promise<Response> {
+  try {
+    const body = await parseBody<{ name: string; price: number }>(request);
+    if (!body.name || !body.price) return error("name and price are required", 400);
+
+    const db = getDb();
+    if (db.query("SELECT id FROM procedures WHERE LOWER(name) = LOWER(?)").get(body.name)) {
+      return error("Procedure already exists", 409);
+    }
+
+    const result = db.run(
+      "INSERT INTO procedures (name, price) VALUES (?, ?)",
+      [body.name.trim(), Number(body.price)]
+    );
+    const procId = Number(result.lastInsertRowid);
+    const created = db.query("SELECT * FROM procedures WHERE id = ?").get(procId);
+
+    const userId = getUserId(request) ?? 0;
+    auditLog({ user_id: userId, action: "create", entity_type: "procedure", entity_id: String(procId), details: { name: body.name, price: body.price } });
+
+    return json(created, 201);
+  } catch (err) {
+    return error(err instanceof Error ? err.message : "Bad request", 400);
+  }
+}
+
 // GET /api/billing/summary?period=today|week|month
 async function handleBillingSummary(request: Request): Promise<Response> {
   const url = new URL(request.url);
@@ -446,6 +486,14 @@ async function handleCollections(request: Request): Promise<Response> {
 }
 
 export async function handleBilling(request: Request): Promise<Response> {
+  const token = extractToken(request);
+  if (!token) return error("Unauthorized — missing authentication token", 401);
+  const session = validateSession(token);
+  if (!session) return error("Unauthorized — invalid or expired session", 401);
+
+  const allowed = hasPermission(session.role as Role, "billing", request.method);
+  if (!allowed) return error("Forbidden — insufficient permissions at data-access level", 403);
+
   const url = new URL(request.url);
   const pathname = url.pathname;
 
@@ -472,6 +520,9 @@ export async function handleBilling(request: Request): Promise<Response> {
   const invDetailMatchAlt = matchPath("/api/invoices/:id", pathname);
   if (invDetailMatchAlt && request.method === "GET") return handleGetInvoice(request, invDetailMatchAlt.id);
   if (invDetailMatchAlt && request.method === "DELETE") return handleDeleteInvoice(request, invDetailMatchAlt.id);
+
+  if ((pathname === "/api/billing/procedures" || pathname === "/api/procedures") && request.method === "GET") return handleListProcedures(request);
+  if ((pathname === "/api/billing/procedures" || pathname === "/api/procedures") && request.method === "POST") return handleCreateProcedure(request);
 
   if ((pathname === "/api/billing/invoices" || pathname === "/api/invoices") && request.method === "GET") return handleListInvoices(request);
   if ((pathname === "/api/billing/invoices" || pathname === "/api/invoices") && request.method === "POST") return handleCreateInvoice(request);

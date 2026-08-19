@@ -39,7 +39,7 @@ function handleOverview(url: URL): Response {
 
   const channelRows = db.query(
     `SELECT source, COUNT(*) as c FROM appointments WHERE source IN ('chat','voice','twilio') AND created_at >= ? GROUP BY source`
-  ).all(iso) as Array<{ source: string; c: number }>;
+  ).all(sqlite) as Array<{ source: string; c: number }>;
   const ai_bookings_by_channel: Record<string, number> = { chat: 0, voice: 0, twilio: 0 };
   for (const row of channelRows) ai_bookings_by_channel[row.source] = Number(row.c);
 
@@ -177,13 +177,43 @@ function queryReportData(type: string): any[] {
       .sort((a, b) => b.outstanding_balance - a.outstanding_balance);
   }
 
+  if (type === 'provincial-compliance') {
+    return db.query(`
+      SELECT 
+        'PHC-REG-77889' as phc_clinic_reg_no,
+        p.patient_id as patient_code,
+        p.full_name as patient_name,
+        p.dob as dob,
+        p.gender as gender,
+        p.cnic as cnic,
+        p.phone as phone,
+        c.created_at as visit_date,
+        d.name as doctor_name,
+        d.specialization as doctor_specialization,
+        c.diagnosis as diagnosis,
+        (
+          SELECT GROUP_CONCAT(pi.medicine_name || ' (' || pi.dosage || ', ' || pi.frequency || ' for ' || pi.duration || ')')
+          FROM prescription_items pi
+          JOIN prescriptions pr ON pi.prescription_id = pr.id
+          WHERE pr.consultation_id = c.id
+        ) as prescribed_medicines,
+        COALESCE(i.total, 0) as total_billed,
+        COALESCE((SELECT SUM(amount) FROM payments WHERE invoice_id = i.id), 0) as amount_paid
+      FROM consultations c
+      JOIN patients p ON c.patient_id = p.id
+      JOIN doctors d ON c.doctor_id = d.id
+      LEFT JOIN invoices i ON i.appointment_id = c.appointment_id AND i.status != 'cancelled'
+      ORDER BY c.created_at DESC
+    `).all();
+  }
+
   return [];
 }
 
 // GET /api/analytics/reports/:type
 function handleReport(type: string): Response {
   const data = queryReportData(type);
-  if (data.length === 0 && !['daily-collections', 'doctor-performance', 'inventory-status', 'outstanding-dues'].includes(type)) {
+  if (data.length === 0 && !['daily-collections', 'doctor-performance', 'inventory-status', 'outstanding-dues', 'provincial-compliance'].includes(type)) {
     return error('Invalid report type', 400);
   }
   return json(data);

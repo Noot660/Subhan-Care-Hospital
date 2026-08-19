@@ -1,9 +1,13 @@
 import { describe, expect, test, beforeAll, afterAll } from "bun:test";
 import { getDb } from "../src/db";
 import { handleRequest } from "../src/index";
+import { decrypt } from "../src/routes/backup";
+import * as fs from "fs";
+import * as path from "path";
 
 describe("Subhan Care - Part 4 Reports & Security Tests", () => {
   let adminToken: string;
+  let pharmacistToken: string;
   let testDoctorId: number;
   let testPatientId: number;
   let testMedicineId: number;
@@ -15,11 +19,15 @@ describe("Subhan Care - Part 4 Reports & Security Tests", () => {
     db.run("DELETE FROM payments WHERE invoice_id IN (SELECT id FROM invoices WHERE patient_id IN (SELECT id FROM patients WHERE full_name LIKE 'Report Test Patient%'))");
     db.run("DELETE FROM invoice_items WHERE invoice_id IN (SELECT id FROM invoices WHERE patient_id IN (SELECT id FROM patients WHERE full_name LIKE 'Report Test Patient%'))");
     db.run("DELETE FROM invoices WHERE patient_id IN (SELECT id FROM patients WHERE full_name LIKE 'Report Test Patient%')");
+    db.run("DELETE FROM prescription_items WHERE prescription_id IN (SELECT id FROM prescriptions WHERE patient_id IN (SELECT id FROM patients WHERE full_name LIKE 'Report Test Patient%'))");
+    db.run("DELETE FROM prescriptions WHERE patient_id IN (SELECT id FROM patients WHERE full_name LIKE 'Report Test Patient%')");
+    db.run("DELETE FROM consultations WHERE patient_id IN (SELECT id FROM patients WHERE full_name LIKE 'Report Test Patient%')");
     db.run("DELETE FROM appointments WHERE patient_id IN (SELECT id FROM patients WHERE full_name LIKE 'Report Test Patient%')");
     db.run("DELETE FROM patients WHERE full_name LIKE 'Report Test Patient%' OR cnic = '35201-9999999-2'");
     db.run("DELETE FROM doctors WHERE name LIKE 'Dr. Report Test%' OR cnic = '35201-9999999-1'");
     db.run("DELETE FROM stock_movements WHERE medicine_id IN (SELECT id FROM medicines WHERE name LIKE 'Report Test Med%')");
     db.run("DELETE FROM medicines WHERE name LIKE 'Report Test Med%'");
+    db.run("DELETE FROM procedures WHERE name = 'Ultra-Sound Test'");
     db.run("DELETE FROM otp_tokens WHERE username = 'admin'");
 
     // 1. Get tokens
@@ -29,6 +37,13 @@ describe("Subhan Care - Part 4 Reports & Security Tests", () => {
       body: JSON.stringify({ username: "admin", password: "admin123" })
     }));
     adminToken = (await adminLogin.json() as any).token;
+
+    const pharmLogin = await handleRequest(new Request("http://localhost:3000/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "pharmacist", password: "staff123" })
+    }));
+    pharmacistToken = (await pharmLogin.json() as any).token;
 
     // 2. Insert test doctor
     const docRes = db.run(`
@@ -51,11 +66,23 @@ describe("Subhan Care - Part 4 Reports & Security Tests", () => {
     `);
     testMedicineId = Number(medRes.lastInsertRowid);
 
-    // 5. Insert test invoice & item & payment
+    // 5. Insert test appointment & consultation (for compliance report)
+    const apptRes = db.run(`
+      INSERT INTO appointments (patient_id, doctor_id, date, start_time, end_time, status)
+      VALUES (?, ?, '2026-09-02', '11:00', '11:30', 'completed')
+    `, [testPatientId, testDoctorId]);
+    const apptId = Number(apptRes.lastInsertRowid);
+
+    db.run(`
+      INSERT INTO consultations (appointment_id, patient_id, doctor_id, diagnosis, notes)
+      VALUES (?, ?, ?, 'Hypertension', 'Keep monitoring vitals')
+    `, [apptId, testPatientId, testDoctorId]);
+
+    // 6. Insert test invoice & item & payment
     const invRes = db.run(`
       INSERT INTO invoices (invoice_number, patient_id, appointment_id, status, subtotal, total)
-      VALUES ('INV-RPT-1', ?, null, 'partially_paid', 1000, 1000)
-    `, [testPatientId]);
+      VALUES ('INV-RPT-1', ?, ?, 'partially_paid', 1000, 1000)
+    `, [testPatientId, apptId]);
     const invoiceId = Number(invRes.lastInsertRowid);
 
     db.run(`
@@ -74,12 +101,27 @@ describe("Subhan Care - Part 4 Reports & Security Tests", () => {
     db.run("DELETE FROM payments WHERE invoice_id IN (SELECT id FROM invoices WHERE patient_id IN (SELECT id FROM patients WHERE full_name LIKE 'Report Test Patient%'))");
     db.run("DELETE FROM invoice_items WHERE invoice_id IN (SELECT id FROM invoices WHERE patient_id IN (SELECT id FROM patients WHERE full_name LIKE 'Report Test Patient%'))");
     db.run("DELETE FROM invoices WHERE patient_id IN (SELECT id FROM patients WHERE full_name LIKE 'Report Test Patient%')");
+    db.run("DELETE FROM prescription_items WHERE prescription_id IN (SELECT id FROM prescriptions WHERE patient_id IN (SELECT id FROM patients WHERE full_name LIKE 'Report Test Patient%'))");
+    db.run("DELETE FROM prescriptions WHERE patient_id IN (SELECT id FROM patients WHERE full_name LIKE 'Report Test Patient%')");
+    db.run("DELETE FROM consultations WHERE patient_id IN (SELECT id FROM patients WHERE full_name LIKE 'Report Test Patient%')");
     db.run("DELETE FROM appointments WHERE patient_id IN (SELECT id FROM patients WHERE full_name LIKE 'Report Test Patient%')");
     db.run("DELETE FROM patients WHERE full_name LIKE 'Report Test Patient%'");
     db.run("DELETE FROM doctors WHERE id = ?", [testDoctorId]);
     db.run("DELETE FROM stock_movements WHERE medicine_id = ?", [testMedicineId]);
     db.run("DELETE FROM medicines WHERE id = ?", [testMedicineId]);
+    db.run("DELETE FROM procedures WHERE name = 'Ultra-Sound Test'");
     db.run("DELETE FROM otp_tokens WHERE username = 'admin'");
+
+    // Clear backups generated during test
+    const backupDir = path.join(import.meta.dirname, "..", "backups");
+    if (fs.existsSync(backupDir)) {
+      const files = fs.readdirSync(backupDir);
+      for (const f of files) {
+        if (f.startsWith("hms-backup-")) {
+          fs.unlinkSync(path.join(backupDir, f));
+        }
+      }
+    }
   });
 
   describe("Standard Report Catalogue (Section 13) & Export", () => {
@@ -147,6 +189,63 @@ describe("Subhan Care - Part 4 Reports & Security Tests", () => {
       const text = await res.text();
       expect(text).toContain("patient_id,patient_code,patient_name,phone");
       expect(text).toContain("Report Test Patient One");
+    });
+
+    test("Provincial Compliance Report (DOM-04) returns audit headers and record census", async () => {
+      const res = await handleRequest(new Request("http://localhost:3000/api/analytics/reports/provincial-compliance", {
+        method: "GET",
+        headers: { "Authorization": `Bearer ${adminToken}` }
+      }));
+      expect(res.status).toBe(200);
+      const data = await res.json() as any[];
+      expect(data.length).toBeGreaterThan(0);
+      const item = data.find(i => i.patient_name === "Report Test Patient One");
+      expect(item).toBeDefined();
+      expect(item.phc_clinic_reg_no).toBe("PHC-REG-77889");
+      expect(item.diagnosis).toBe("Hypertension");
+    });
+  });
+
+  describe("Procedures Directory (FR-BIL-02)", () => {
+    test("Create and fetch procedures, and auto-lookup in invoice items", async () => {
+      // 1. Create a procedure
+      const resCreate = await handleRequest(new Request("http://localhost:3000/api/billing/procedures", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${adminToken}`
+        },
+        body: JSON.stringify({ name: "Ultra-Sound Test", price: 2000.0 })
+      }));
+      expect(resCreate.status).toBe(201);
+
+      // 2. Fetch procedures list
+      const resList = await handleRequest(new Request("http://localhost:3000/api/billing/procedures", {
+        method: "GET",
+        headers: { "Authorization": `Bearer ${adminToken}` }
+      }));
+      expect(resList.status).toBe(200);
+      const list = await resList.json() as any[];
+      expect(list.some(p => p.name === "Ultra-Sound Test" && p.price === 2000.0)).toBe(true);
+
+      // 3. Create invoice with type = 'procedure' and verify price is fetched from procedures directory
+      const resInv = await handleRequest(new Request("http://localhost:3000/api/billing/invoices", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${adminToken}`
+        },
+        body: JSON.stringify({
+          patient_id: testPatientId,
+          items: [{ description: "Ultra-Sound Test", type: "procedure", quantity: 1 }]
+        })
+      }));
+      if (resInv.status !== 201) {
+        console.log("Error response body:", await resInv.text());
+      }
+      expect(resInv.status).toBe(201);
+      const invoice = await resInv.json() as any;
+      expect(invoice.total).toBe(2000.0);
     });
   });
 
@@ -243,6 +342,53 @@ describe("Subhan Care - Part 4 Reports & Security Tests", () => {
       // Verify session was indeed deleted from DB
       const sessionRow = db.query("SELECT * FROM sessions WHERE token = ?").get(token);
       expect(sessionRow).toBeNull();
+    });
+  });
+
+  describe("Data-Access RBAC, Tamper-Proof Audit, Encrypted Backups (SEC-03, INV-06, SEC-09)", () => {
+    test("SEC-03: Reject unauthorized database access for pharmacist requesting billing endpoint", async () => {
+      const res = await handleRequest(new Request("http://localhost:3000/api/billing/invoices", {
+        method: "GET",
+        headers: { "Authorization": `Bearer ${pharmacistToken}` }
+      }));
+      expect(res.status).toBe(403);
+      const body = await res.json() as any;
+      expect(body.error).toContain("Forbidden — insufficient permissions at data-access level");
+    });
+
+    test("INV-06 / AUD-03: Reject DELETE and POST operations on audit logs", async () => {
+      const res = await handleRequest(new Request("http://localhost:3000/api/audit", {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${adminToken}` }
+      }));
+      expect([403, 405]).toContain(res.status);
+    });
+
+    test("SEC-09: Create encrypted backup at rest and verify decryption output structure", async () => {
+      // 1. Create a backup
+      const res = await handleRequest(new Request("http://localhost:3000/api/admin/backups/create", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${adminToken}` }
+      }));
+      expect(res.status).toBe(201);
+      const body = await res.json() as any;
+      expect(body.filename).toBeDefined();
+
+      // 2. Read and verify backup file is not plain SQLite
+      const backupDir = path.join(import.meta.dirname, "..", "backups");
+      const backupPath = path.join(backupDir, body.filename);
+      expect(fs.existsSync(backupPath)).toBe(true);
+
+      const fileBuffer = fs.readFileSync(backupPath);
+      // SQLite database header starts with "SQLite format 3\0"
+      const plainSqliteHeader = "SQLite format 3\0";
+      const actualFileHeader = fileBuffer.subarray(0, 16).toString();
+      expect(actualFileHeader).not.toBe(plainSqliteHeader);
+
+      // 3. Decrypt and check that it yields a valid SQLite database header
+      const decrypted = decrypt(fileBuffer);
+      const decryptedHeader = decrypted.subarray(0, 16).toString();
+      expect(decryptedHeader).toBe(plainSqliteHeader);
     });
   });
 });

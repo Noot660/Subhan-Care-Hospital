@@ -1,7 +1,8 @@
 import { getDb } from "../db";
 import { json, error, parseBody, matchPath } from "../middleware/http";
-import { extractToken, validateSession } from "../middleware/auth";
+import { extractToken, validateSession, hasPermission } from "../middleware/auth";
 import { auditLog } from "../middleware/audit";
+import type { Role } from "../types";
 
 function getUserId(request: Request): number | null {
   const token = extractToken(request);
@@ -151,6 +152,14 @@ async function handleCreateConsultation(request: Request): Promise<Response> {
 }
 
 export async function handleConsultations(request: Request): Promise<Response> {
+  const token = extractToken(request);
+  if (!token) return error("Unauthorized — missing authentication token", 401);
+  const session = validateSession(token);
+  if (!session) return error("Unauthorized — invalid or expired session", 401);
+
+  const allowed = hasPermission(session.role as Role, "consultations", request.method);
+  if (!allowed) return error("Forbidden — insufficient permissions at data-access level", 403);
+
   const url = new URL(request.url);
   const pathname = url.pathname;
   const idMatch = matchPath("/api/consultations/:id", pathname);

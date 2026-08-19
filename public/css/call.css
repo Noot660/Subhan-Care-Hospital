@@ -10,13 +10,13 @@
   --surface-hover: rgba(255,255,255,0.07);
   --text: #e0e0e0;
   --text-dim: #7a7f8c;
-  --blue: #3b82f6;
-  --blue-glow: rgba(59,130,246,0.4);
-  --green: #22c55e;
-  --green-glow: rgba(34,197,94,0.5);
-  --amber: #f59e0b;
-  --amber-glow: rgba(245,158,11,0.5);
-  --red: #ef4444;
+  --blue: #0d9488;
+  --blue-glow: rgba(13, 148, 136, 0.4);
+  --green: #059669;
+  --green-glow: rgba(5, 150, 105, 0.4);
+  --amber: #d97706;
+  --amber-glow: rgba(217, 119, 6, 0.4);
+  --red: #dc2626;
   --radius: 12px;
   --transition: 0.3s ease;
 }
