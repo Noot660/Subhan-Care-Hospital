@@ -2,6 +2,32 @@
 /* Premium dark theme matching the call page design language */
 
 :root {
+  /* Semantic palette mapping */
+  --bg-start: var(--color-background);           /* Light surface */
+  --bg-end: var(--color-surface-hover);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-surface-hover);
+  --text: var(--color-primary);
+  --text-dim: var(--gray-500);
+  --blue: var(--color-accent);
+  --blue-strong: var(--color-primary-dark);
+  --blue-glow: rgba(13, 148, 136, 0.15);
+  --green: var(--color-success);
+  --green-glow: rgba(5, 150, 105, 0.15);
+  --amber: var(--color-warning);
+  --amber-glow: rgba(217, 119, 6, 0.15);
+  --red: var(--color-danger);
+  --red-glow: rgba(220, 38, 38, 0.15);
+  --teal: var(--color-accent);
+  --purple: #7c3aed; /* retain */
+  --border: var(--gray-200);
+  --radius: 12px;
+  --radius-sm: 8px;
+  --transition: 0.3s ease;
+  --sidebar-w: 280px;
+  --sidebar-w-collapsed: 60px;
+  --topbar-h: 64px;
+}
   --bg-start: #f8fafc;
   --bg-end: #f1f5f9;
   --surface: #ffffff;

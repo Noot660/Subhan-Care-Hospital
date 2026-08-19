@@ -1,6 +1,27 @@
 /* ── Subhan Care AI — Chat Widget Styles ── */
 :root {
-  --primary: #0f172a;
+  /* Semantic palette mapping */
+  --bg: var(--color-background);
+  --surface: var(--color-surface);
+  --surface-alt: var(--color-surface-hover);
+  --text: var(--color-primary);
+  --text-secondary: var(--gray-600);
+  --text-muted: var(--gray-400);
+  --border: var(--gray-200);
+  --border-light: var(--gray-100);
+  --danger: var(--color-danger);
+  --success: var(--color-success);
+  /* Legacy variables removed - using semantic palette */
+  --primary: var(--color-primary);
+  --primary-dark: var(--color-primary-dark);
+  --primary-light: var(--color-accent);
+  --radius-sm: var(--radius-sm);
+  --radius: var(--radius);
+  --radius-lg: var(--radius-lg);
+  --radius-full: 9999px;
+  --transition: 0.2s ease;
+}
+/* Legacy variables removed - using semantic palette */
   --primary-dark: #1e293b;
   --primary-light: #0d9488;
   --bg: #f1f5f9;

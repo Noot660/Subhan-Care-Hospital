@@ -2,6 +2,19 @@
 /* Premium dark theme matching the call page design language */
 
 :root {
+  /* Semantic palette mapping */
+  --bg-start: var(--color-background);           /* Light surface */
+  --bg-end: var(--color-surface-hover);
+  --surface: var(--color-surface);
+  --surface-hover: var(--color-surface-hover);
+  --text: var(--color-primary);
+  --text-dim: var(--gray-500);
+  --blue: var(--color-accent);
+  --blue-glow: rgba(13, 148, 136, 0.15);
+  --red: var(--color-danger);
+  --radius: 12px;
+  --transition: 0.3s ease;
+}
   --bg-start: #f8fafc;
   --bg-end: #f1f5f9;
   --surface: #ffffff;

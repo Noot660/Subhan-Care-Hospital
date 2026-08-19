@@ -8,7 +8,7 @@ const synth = TTS ? window.speechSynthesis : null;
 // Full voice calling needs BOTH speech recognition (mic input) and speech
 // synthesis (AI replies). If either is missing we degrade to text chat with a
 // friendly inline notice — never an uncaught error.
-const voiceSupported = !!(SR && synth);
+// Warn if SpeechRecognition or SpeechSynthesis not supported\nif (!SR) console.warn('[VoiceCall] SpeechRecognition not supported in this browser');\nif (!synth) console.warn('[VoiceCall] SpeechSynthesis not supported in this browser');
 
 // ── State machine ──
 // idle → listening → thinking → speaking → (ready → ...) → idle
@@ -29,6 +29,24 @@ let muted = false;
 let callStart = null;
 let timerInterval = null;
 let actions = [];
+// Global cached voices and loader for SpeechSynthesis
+let cachedVoices = [];
+function loadVoices() {
+  return new Promise(resolve => {
+    const voices = speechSynthesis.getVoices();
+    if (voices.length) {
+      cachedVoices = voices;
+      resolve();
+      return;
+    }
+    speechSynthesis.onvoiceschanged = () => {
+      cachedVoices = speechSynthesis.getVoices();
+      resolve();
+    };
+  });
+}
+// Initiate loading on script start
+loadVoices();
 let recognition = null;
 let silenceTimer = null;
 let currentUtterance = null;
@@ -139,9 +157,17 @@ function applyLangUI() {
   document.documentElement.lang = lang;
   document.title = t.title;
   if (langToggle) {
-    langToggle.innerHTML = lang === 'en'
-      ? 'EN | <span class="lang-inactive">UR</span>'
-      : '<span class="lang-inactive">EN</span> | UR';
+    // Update language toggle button text and active styling
+    if (lang === 'en') {
+      langToggle.innerHTML = 'EN | <span class="lang-inactive">UR</span>';
+      langToggle.classList.add('active-en');
+      langToggle.classList.remove('active-ur');
+    } else {
+      langToggle.innerHTML = '<span class="lang-inactive">EN</span> | UR';
+      langToggle.classList.add('active-ur');
+      langToggle.classList.remove('active-en');
+    }
+    // Ensure bold style for active language via CSS class .active-en/.active-ur
     langToggle.setAttribute('aria-label', t.langAria);
   }
   const backLink = document.querySelector('.back-link');
@@ -183,6 +209,8 @@ function updateTtsFallbackNotice() {
   const nt = notice.querySelector('#voiceNoticeTitle');
   const nb = notice.querySelector('#voiceNoticeBody');
   const nl = notice.querySelector('#voiceNoticeLink');
+  // Global flag indicating if both SpeechRecognition and SpeechSynthesis are available
+  const voiceSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition) && !!window.speechSynthesis;
   const noUrduVoice = lang === 'ur' && voiceSupported && !getVoice();
   if (noUrduVoice) {
     if (nt) nt.textContent = ui().ttsFallbackTitle;
@@ -440,6 +468,20 @@ function stopTimer() { clearInterval(timerInterval); timerInterval = null; }
 // English: prefer Google en-US, then en-US, then any en-*.
 function getVoice() {
   if (!synth) return null;
+  const voices = cachedVoices;
+  if (!voices.length) return null;
+
+  const norm = v => (v.lang || '').toLowerCase().replace('_', '-');
+  const pick = prefixes => {
+    for (const prefix of prefixes) {
+      const group = voices.filter(v => norm(v).startsWith(prefix));
+      if (!group.length) continue;
+      return group.find(v => /google/i.test(v.name)) || group[0];
+    }
+    return null;
+  };
+
+  return lang === 'ur'
   let voices = [];
   try { voices = synth.getVoices() || []; } catch (_) { voices = []; }
   if (!voices.length) return null;
