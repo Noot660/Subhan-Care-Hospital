@@ -1,6 +1,3 @@
-// Analytics + AI operations endpoints — admin only (RBAC module "analytics")
-// Overview KPIs, AI event feed, and appointment source (channel) breakdown.
-
 import { getDb } from '../db';
 import { json, error } from '../middleware/http';
 import { countPendingCallbacks } from '../handoff/store';
@@ -15,9 +12,6 @@ function parsePeriod(raw: string | null): Period {
   return (VALID_PERIODS as readonly string[]).includes(raw || '') ? (raw as Period) : '7d';
 }
 
-// Compute time cutoffs for a period.
-// appointments.* timestamps are ISO-8601 (e.g. 2026-08-06T09:23:00.123Z);
-// ai_events.created_at is SQLite datetime('now') (e.g. 2026-08-06 09:23:00, UTC).
 function periodCutoffs(period: Period): { iso: string; sqlite: string } {
   const days = period === 'today' ? 0 : period === '30d' ? 30 : 7;
   let startIso: string;
@@ -55,7 +49,6 @@ function handleOverview(url: URL): Response {
   const triage_count = count("SELECT COUNT(*) as c FROM ai_events WHERE event_type = 'triage' AND created_at >= ?", sqlite);
   const cancellations = count("SELECT COUNT(*) as c FROM appointments WHERE status = 'cancelled' AND updated_at >= ?", iso);
 
-  // Human-handoff / callback metrics (counts only — never phone numbers).
   const callbacks_requested = count("SELECT COUNT(*) as c FROM ai_events WHERE event_type = 'callback_requested' AND created_at >= ?", sqlite);
   const callbacks_pending = countPendingCallbacks();
 
@@ -97,7 +90,6 @@ function handleAiEvents(url: URL): Response {
   }>;
 
   const events = rows.map((row) => {
-    // Details may contain identifiers or free text; analytics exposes operational metadata only.
     return { id: row.id, channel: row.channel, event_type: row.event_type, created_at: row.created_at };
   });
 
@@ -123,9 +115,134 @@ function handleChannels(url: URL): Response {
   return json({ period, channels });
 }
 
+// ── Standard Report Catalogue (Section 13) Helpers ──
+
+function queryReportData(type: string): any[] {
+  const db = getDb();
+  if (type === 'daily-collections') {
+    return db.query(`
+      SELECT p.id as payment_id, p.amount, p.method, p.reference, p.created_at,
+             i.invoice_number, pat.full_name as patient_name
+      FROM payments p
+      JOIN invoices i ON p.invoice_id = i.id
+      JOIN patients pat ON i.patient_id = pat.id
+      WHERE date(p.created_at) = date('now')
+      ORDER BY p.created_at DESC
+    `).all();
+  }
+
+  if (type === 'doctor-performance') {
+    return db.query(`
+      SELECT d.id as doctor_id, d.name as doctor_name, d.specialization,
+        (SELECT COUNT(*) FROM appointments WHERE doctor_id = d.id) as appointment_count,
+        (SELECT COALESCE(SUM(ii.total), 0)
+         FROM invoice_items ii
+         JOIN invoices i ON ii.invoice_id = i.id
+         JOIN appointments a ON i.appointment_id = a.id
+         WHERE a.doctor_id = d.id AND i.status != 'cancelled') as total_revenue
+      FROM doctors d
+      WHERE d.status = 'active'
+      ORDER BY total_revenue DESC
+    `).all();
+  }
+
+  if (type === 'inventory-status') {
+    return db.query(`
+      SELECT id as medicine_id, name, batch_number, quantity, unit_cost, expiry_date,
+             (quantity <= reorder_threshold) as is_low_stock,
+             (expiry_date <= date('now', '+' || expiry_alert_days || ' days')) as is_near_expiry
+      FROM medicines
+      ORDER BY name
+    `).all();
+  }
+
+  if (type === 'outstanding-dues') {
+    const patients = db.query(`
+      SELECT p.id as patient_id, p.patient_id as patient_code, p.full_name as patient_name, p.phone,
+             COALESCE(SUM(i.total), 0) as total_invoiced,
+             (SELECT COALESCE(SUM(pm.amount), 0) FROM payments pm JOIN invoices inv ON pm.invoice_id = inv.id WHERE inv.patient_id = p.id AND inv.status != 'cancelled') as total_paid,
+             (SELECT COALESCE(SUM(cn.amount), 0) FROM credit_notes cn JOIN invoices inv ON cn.invoice_id = inv.id WHERE inv.patient_id = p.id AND inv.status != 'cancelled') as total_credited
+      FROM patients p
+      JOIN invoices i ON i.patient_id = p.id
+      WHERE i.status != 'cancelled'
+      GROUP BY p.id
+    `).all() as any[];
+
+    return patients
+      .map(row => {
+        const outstanding = Math.round((row.total_invoiced - row.total_paid - row.total_credited) * 100) / 100;
+        return { ...row, outstanding_balance: Math.max(0, outstanding) };
+      })
+      .filter(row => row.outstanding_balance > 0)
+      .sort((a, b) => b.outstanding_balance - a.outstanding_balance);
+  }
+
+  return [];
+}
+
+// GET /api/analytics/reports/:type
+function handleReport(type: string): Response {
+  const data = queryReportData(type);
+  if (data.length === 0 && !['daily-collections', 'doctor-performance', 'inventory-status', 'outstanding-dues'].includes(type)) {
+    return error('Invalid report type', 400);
+  }
+  return json(data);
+}
+
+// GET /api/analytics/reports/:type/export
+function handleReportExport(type: string, format: string): Response {
+  if (format !== 'csv') {
+    return error('Only CSV format is currently supported for export', 400);
+  }
+  const data = queryReportData(type);
+  if (data.length === 0) {
+    return new Response('', {
+      headers: {
+        'Content-Type': 'text/csv',
+        'Content-Disposition': `attachment; filename="${type}_report.csv"`,
+      }
+    });
+  }
+
+  const headers = Object.keys(data[0]);
+  const rows = [headers.join(",")];
+  for (const item of data) {
+    const values = headers.map(header => {
+      const val = item[header];
+      const valStr = val === null || val === undefined ? "" : String(val);
+      const escaped = valStr.replace(/"/g, '""');
+      return `"${escaped}"`;
+    });
+    rows.push(values.join(","));
+  }
+  const csvContent = rows.join("\r\n");
+
+  return new Response(csvContent, {
+    headers: {
+      'Content-Type': 'text/csv',
+      'Content-Disposition': `attachment; filename="${type}_report.csv"`,
+      'Cache-Control': 'no-cache',
+    }
+  });
+}
+
+// Route dispatcher
 export async function handleAnalytics(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const pathname = url.pathname;
+
+  // Exact export endpoint match
+  const exportMatch = pathname.match(/^\/api\/analytics\/reports\/([a-zA-Z0-9_-]+)\/export$/);
+  if (exportMatch && request.method === 'GET') {
+    const format = url.searchParams.get('format') || 'csv';
+    return handleReportExport(exportMatch[1], format);
+  }
+
+  // Exact report catalogue endpoint match
+  const reportMatch = pathname.match(/^\/api\/analytics\/reports\/([a-zA-Z0-9_-]+)$/);
+  if (reportMatch && request.method === 'GET') {
+    return handleReport(reportMatch[1]);
+  }
 
   if (pathname === '/api/analytics/overview' && request.method === 'GET') return handleOverview(url);
   if (pathname === '/api/analytics/ai-events' && request.method === 'GET') return handleAiEvents(url);

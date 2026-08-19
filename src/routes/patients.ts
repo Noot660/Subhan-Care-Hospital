@@ -67,7 +67,59 @@ async function handleGetPatient(request: Request, id: string): Promise<Response>
   const appointments = db.query(
     `SELECT a.*, d.name as doctor_name FROM appointments a JOIN doctors d ON a.doctor_id = d.id WHERE a.patient_id = ? ORDER BY a.date DESC, a.start_time DESC LIMIT 50`
   ).all(patient.id);
-  return json({ ...patient, visit_history: appointments });
+
+  // Fetch prescriptions and their items
+  const prescriptions = db.query(
+    `SELECT pr.*, d.name as doctor_name, c.diagnosis
+     FROM prescriptions pr
+     JOIN doctors d ON pr.doctor_id = d.id
+     LEFT JOIN consultations c ON pr.consultation_id = c.id
+     WHERE pr.patient_id = ?
+     ORDER BY pr.created_at DESC`
+  ).all(patient.id) as Array<Record<string, any>>;
+
+  for (const p of prescriptions) {
+    p.items = db.query("SELECT * FROM prescription_items WHERE prescription_id = ?").all(p.id);
+  }
+
+  // Fetch invoices and their items
+  const invoices = db.query(
+    `SELECT i.*,
+       (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE invoice_id = i.id) as amount_paid
+     FROM invoices i
+     WHERE i.patient_id = ?
+     ORDER BY i.created_at DESC`
+  ).all(patient.id) as Array<Record<string, any>>;
+
+  for (const inv of invoices) {
+    inv.items = db.query("SELECT * FROM invoice_items WHERE invoice_id = ?").all(inv.id);
+  }
+
+  // Fetch payments
+  const payments = db.query(
+    `SELECT p.*, i.invoice_number
+     FROM payments p
+     JOIN invoices i ON p.invoice_id = i.id
+     WHERE i.patient_id = ?
+     ORDER BY p.created_at DESC`
+  ).all(patient.id);
+
+  // Calculate outstanding balance across all non-cancelled invoices
+  const balanceRow = db.query(
+    `SELECT COALESCE(SUM(total - (SELECT COALESCE(SUM(amount), 0) FROM payments WHERE invoice_id = invoices.id)), 0) as balance
+     FROM invoices
+     WHERE patient_id = ? AND status != 'cancelled'`
+  ).get(patient.id) as { balance: number } | undefined;
+  const outstandingBalance = balanceRow ? balanceRow.balance : 0;
+
+  return json({
+    ...patient,
+    visit_history: appointments,
+    prescriptions,
+    invoices,
+    payments,
+    outstanding_balance: Math.round(outstandingBalance * 100) / 100
+  });
 }
 
 async function handleUpdatePatient(request: Request, id: string): Promise<Response> {
@@ -87,12 +139,30 @@ async function handleUpdatePatient(request: Request, id: string): Promise<Respon
       }
     }
     if (updates.length === 0) return error("No valid fields to update", 400);
+
+    const token = extractToken(request);
+    const session = validateSession(token || "");
+    const changedBy = session ? session.user_id : 1; // Default to 1 (Admin)
+
+    // Log to patient_demographic_history for each modified field
+    for (const field of allowedFields) {
+      const newValue = body[field as keyof typeof body];
+      if (newValue !== undefined) {
+        const oldValue = existing[field as keyof typeof existing];
+        if (String(newValue) !== String(oldValue ?? "")) {
+          db.run(
+            `INSERT INTO patient_demographic_history (patient_id, changed_by, field_name, old_value, new_value)
+             VALUES (?, ?, ?, ?, ?)`,
+            [existing.id, changedBy, field, oldValue === null ? null : String(oldValue), String(newValue)]
+          );
+        }
+      }
+    }
+
     updates.push("updated_at = ?");
     params.push(now);
     params.push(existing.id);
     db.run(`UPDATE patients SET ${updates.join(", ")} WHERE id = ?`, params);
-    const token = extractToken(request);
-    const session = validateSession(token || "");
     if (session) auditLog({ user_id: session.user_id, action: "update", entity_type: "patient", entity_id: existing.patient_id, details: body as Record<string, unknown> });
     return json(db.query("SELECT * FROM patients WHERE id = ?").get(existing.id) as Patient);
   } catch (err) {

@@ -21,7 +21,7 @@ import {
 } from './conversation';
 import type { Patient, Doctor, DoctorSchedule, Appointment } from '../types';
 import { MAX_TURNS, sensitiveVerifier, SENSITIVE_OPERATION_MESSAGE } from '../security';
-import { availableSlots as getAvailableSlots, validateAppointmentInput, validateCalendarDate } from '../appointments/validation';
+import { availableSlots as getAvailableSlots, validateAppointmentInput, validateCalendarDate, hospitalToday } from '../appointments/validation';
 import { detectRedFlag } from './safety';
 import { classifyIntent, isHandoffRequest } from './llm';
 import { getHandoffConfig, hoursSlaText } from '../handoff/config';
@@ -67,22 +67,80 @@ function isNegative(text: string): boolean {
     /\bno\b/i.test(lower) || /\bnahi\b/i.test(lower) || /\bnahin\b/i.test(lower);
 }
 
+function formatAndSanitizeCNIC(cnic: string): string | null {
+  const digits = cnic.replace(/\D/g, '');
+  if (digits.length !== 13) return null;
+  return `${digits.slice(0, 5)}-${digits.slice(5, 12)}-${digits.slice(12)}`;
+}
+
 function isValidCNIC(cnic: string): boolean {
-  return /^\d{5}-\d{7}-\d$/.test(cnic);
+  return formatAndSanitizeCNIC(cnic) !== null;
+}
+
+function parseAndFormatDOB(dob: string): string | null {
+  const trimmed = dob.trim();
+  // Try YYYY-MM-DD
+  let match = trimmed.match(/^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/);
+  if (match) return trimmed;
+
+  // Try DD-MM-YYYY or DD/MM/YYYY
+  match = trimmed.match(/^(0[1-9]|[12]\d|3[01])[-/](0[1-9]|1[0-2])[-/](\d{4})$/);
+  if (match) {
+    const [, d, m, y] = match;
+    return `${y}-${m}-${d}`;
+  }
+
+  // Try YYYY/MM/DD
+  match = trimmed.match(/^(\d{4})\/(0[1-9]|1[0-2])\/(0[1-9]|[12]\d|3[01])$/);
+  if (match) {
+    const [, y, m, d] = match;
+    return `${y}-${m}-${d}`;
+  }
+
+  return null;
 }
 
 function isValidDOB(dob: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(dob)) return false;
-  const d = new Date(dob + 'T00:00:00');
-  return !isNaN(d.getTime()) && d <= new Date();
+  const formatted = parseAndFormatDOB(dob);
+  if (!formatted) return false;
+  const [year, month, day] = formatted.split("-").map(Number);
+  const d = new Date(Date.UTC(year, month - 1, day));
+  if (d.getUTCFullYear() !== year || d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) {
+    return false;
+  }
+  const today = hospitalToday();
+  return formatted <= today;
+}
+
+function formatAndSanitizePhone(phone: string): string | null {
+  let cleaned = phone.replace(/\D/g, '');
+  if (cleaned.startsWith('923') && cleaned.length === 12) {
+    cleaned = '0' + cleaned.slice(2);
+  }
+  if (cleaned.length !== 11 || !cleaned.startsWith('03')) {
+    return null;
+  }
+  return cleaned;
 }
 
 function isValidPhone(phone: string): boolean {
-  return /^03\d{2}-?\d{7}$/.test(phone.replace(/\s/g, ''));
+  return formatAndSanitizePhone(phone) !== null;
+}
+
+function sanitizeGender(gender: string): string | null {
+  const cleaned = gender.trim().toLowerCase();
+  if (/^(male|mard|m|men|larka)$/i.test(cleaned)) return 'Male';
+  if (/^(female|aurat|f|women|lady|girl|larki)$/i.test(cleaned)) return 'Female';
+  if (/^(other|o)$/i.test(cleaned)) return 'Other';
+  return null;
 }
 
 function isValidGender(gender: string): boolean {
-  return /^(male|female|other)$/i.test(gender.trim());
+  return sanitizeGender(gender) !== null;
+}
+
+function sanitizeName(name: string): string {
+  return name.replace(/[^a-zA-Z\s.\-']/g, '').replace(/\s+/g, ' ').trim();
 }
 
 function findPatientByIdentifier(query: string): Patient | null {
@@ -598,17 +656,21 @@ async function continueRegistration(
   let errorKey = '';
 
   switch (field) {
-    case 'full_name':
-      if (text.length < 2) { valid = false; errorKey = 'validation_required'; }
+    case 'full_name': {
+      const sanitized = sanitizeName(text);
+      if (sanitized.length < 2) { valid = false; errorKey = 'validation_required'; }
+      else { collected.full_name = sanitized; }
       break;
-    case 'cnic':
-      if (!isValidCNIC(text)) { valid = false; errorKey = 'reg_invalid_cnic'; }
+    }
+    case 'cnic': {
+      const sanitized = formatAndSanitizeCNIC(text);
+      if (!sanitized) { valid = false; errorKey = 'reg_invalid_cnic'; }
       else {
         const db = getDb();
-        const existing = db.query("SELECT * FROM patients WHERE cnic = ?").get(text) as Patient | undefined;
+        const existing = db.query("SELECT * FROM patients WHERE cnic = ?").get(sanitized) as Patient | undefined;
         if (existing) {
           return {
-            reply: t('reg_cnic_exists', lang, { cnic: text }),
+            reply: t('reg_cnic_exists', lang, { cnic: sanitized }),
             session_id: state.sessionId,
             intent: 'register_patient',
             language: lang,
@@ -616,23 +678,40 @@ async function continueRegistration(
             action: { type: 'patient_found', data: { patient_id: existing.patient_id } },
           };
         }
+        collected.cnic = sanitized;
       }
       break;
-    case 'dob':
-      if (!isValidDOB(text)) { valid = false; errorKey = 'reg_invalid_dob'; }
+    }
+    case 'dob': {
+      const sanitized = parseAndFormatDOB(text);
+      if (!sanitized || !isValidDOB(text)) { valid = false; errorKey = 'reg_invalid_dob'; }
+      else { collected.dob = sanitized; }
       break;
-    case 'gender':
-      if (!isValidGender(text)) { valid = false; errorKey = 'reg_invalid_gender'; }
+    }
+    case 'gender': {
+      const sanitized = sanitizeGender(text);
+      if (!sanitized) { valid = false; errorKey = 'reg_invalid_gender'; }
+      else { collected.gender = sanitized; }
       break;
-    case 'phone':
-      if (!isValidPhone(text)) { valid = false; errorKey = 'reg_invalid_phone'; }
+    }
+    case 'phone': {
+      const sanitized = formatAndSanitizePhone(text);
+      if (!sanitized) { valid = false; errorKey = 'reg_invalid_phone'; }
+      else { collected.phone = sanitized; }
       break;
-    case 'address':
-      if (text.length < 5) { valid = false; errorKey = 'validation_required'; }
+    }
+    case 'address': {
+      const sanitized = text.trim();
+      if (sanitized.length < 5) { valid = false; errorKey = 'validation_required'; }
+      else { collected.address = sanitized; }
       break;
-    case 'emergency_contact':
-      if (text.length < 10) { valid = false; errorKey = 'validation_required'; }
+    }
+    case 'emergency_contact': {
+      const sanitized = formatAndSanitizePhone(text);
+      if (!sanitized) { valid = false; errorKey = 'reg_invalid_phone'; }
+      else { collected.emergency_contact = sanitized; }
       break;
+    }
   }
 
   if (!valid) {
@@ -644,9 +723,6 @@ async function continueRegistration(
       conversation_active: true,
     };
   }
-
-  // Store the value
-  collected[field] = text;
 
   // Get next step
   const nextStepIdx = stepIdx + 1;
@@ -841,6 +917,16 @@ async function continueBooking(
     // Show schedule info
     const db = getDb();
     const schedules = db.query("SELECT * FROM doctor_schedules WHERE doctor_id = ? ORDER BY day_of_week").all(doctor.id) as DoctorSchedule[];
+    if (schedules.length === 0) {
+      return {
+        reply: t('book_doctor_unconfigured', lang, { doctor_name: doctor.name }),
+        session_id: state.sessionId,
+        intent: 'book_appointment',
+        language: lang,
+        conversation_active: true,
+      };
+    }
+
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const scheduleInfo = schedules.map(s => `${dayNames[s.day_of_week]}: ${s.start_time}-${s.end_time}`).join(', ');
 
@@ -893,9 +979,8 @@ async function continueBooking(
     const schedules = db.query("SELECT * FROM doctor_schedules WHERE doctor_id = ? AND day_of_week = ?").all(doctorId, dayOfWeek) as DoctorSchedule[];
 
     if (schedules.length === 0) {
-      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
       return {
-        reply: t('book_no_slots', lang, { doctor_name: collected.doctor_name, date }),
+        reply: t('book_no_schedule_on_day', lang, { doctor_name: collected.doctor_name, date }),
         session_id: state.sessionId,
         intent: 'book_appointment',
         language: lang,
@@ -907,7 +992,7 @@ async function continueBooking(
     const availableSlots = getAvailableSlots(db, doctorId, date);
     if (availableSlots.length === 0) {
       return {
-        reply: t('book_no_slots', lang, { doctor_name: collected.doctor_name, date }),
+        reply: t('book_fully_booked', lang, { doctor_name: collected.doctor_name, date }),
         session_id: state.sessionId,
         intent: 'book_appointment',
         language: lang,
@@ -1584,10 +1669,23 @@ async function continueCancelReschedule(
     // Get live slots for new date (shared slot generation in ../appointments/validation).
     const db = getDb();
     const doctorId = Number(collected.doctor_id);
+    const dayOfWeek = dateValidation.ok ? dateValidation.dayOfWeek : -1;
+    const schedules = db.query("SELECT * FROM doctor_schedules WHERE doctor_id = ? AND day_of_week = ?").all(doctorId, dayOfWeek) as DoctorSchedule[];
+
+    if (schedules.length === 0) {
+      return {
+        reply: t('book_no_schedule_on_day', lang, { doctor_name: collected.doctor_name, date: newDate }),
+        session_id: state.sessionId,
+        intent: 'cancel_reschedule',
+        language: lang,
+        conversation_active: true,
+      };
+    }
+
     const availableSlots = getAvailableSlots(db, doctorId, newDate);
     if (availableSlots.length === 0) {
       return {
-        reply: t('book_no_slots', lang, { doctor_name: collected.doctor_name, date: newDate }),
+        reply: t('book_fully_booked', lang, { doctor_name: collected.doctor_name, date: newDate }),
         session_id: state.sessionId,
         intent: 'cancel_reschedule',
         language: lang,

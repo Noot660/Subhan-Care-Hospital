@@ -42,11 +42,12 @@ export function createSession(staff: {
   const db = getDb();
   const token = generateToken();
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24 hours
+  const now = new Date().toISOString();
 
   db.run(
-    `INSERT INTO sessions (token, user_id, staff_id, role, username, name, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [token, staff.id, staff.id, staff.role, staff.username, staff.name, expiresAt]
+    `INSERT INTO sessions (token, user_id, staff_id, role, username, name, expires_at, last_active_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [token, staff.id, staff.id, staff.role, staff.username, staff.name, expiresAt, now]
   );
 
   return {
@@ -56,7 +57,7 @@ export function createSession(staff: {
     role: staff.role,
     username: staff.username,
     name: staff.name,
-    created_at: new Date().toISOString(),
+    created_at: now,
     expires_at: expiresAt,
   };
 }
@@ -66,10 +67,10 @@ export function validateSession(token: string): Session | null {
   const db = getDb();
   const row = db
     .query(
-      `SELECT token, user_id, staff_id, role, username, name, created_at, expires_at
+      `SELECT token, user_id, staff_id, role, username, name, created_at, expires_at, last_active_at
        FROM sessions WHERE token = ?`
     )
-    .get(token) as Session | undefined;
+    .get(token) as (Session & { last_active_at: string }) | undefined;
 
   if (!row) return null;
 
@@ -78,6 +79,18 @@ export function validateSession(token: string): Session | null {
     db.run("DELETE FROM sessions WHERE token = ?", [token]);
     return null;
   }
+
+  // Check inactive timeout (15 minutes = 15 * 60 * 1000 ms)
+  const lastActive = new Date(row.last_active_at).getTime();
+  const diffMinutes = (Date.now() - lastActive) / (60 * 1000);
+  if (diffMinutes > 15) {
+    db.run("DELETE FROM sessions WHERE token = ?", [token]);
+    return null;
+  }
+
+  // Update last_active_at to now
+  const now = new Date().toISOString();
+  db.run("UPDATE sessions SET last_active_at = ? WHERE token = ?", [now, token]);
 
   return row;
 }
@@ -190,6 +203,14 @@ const RBAC_MATRIX: Record<string, Record<Role, "F" | "R" | "L" | "-">> = {
     billing: "-",
     management: "-",
   },
+  doctor_requests: {
+    admin: "F",
+    doctor: "F",
+    receptionist: "-",
+    pharmacist: "-",
+    billing: "-",
+    management: "-",
+  },
 };
 
 // Map HTTP methods to required permission level
@@ -228,6 +249,7 @@ export function hasPermission(role: Role, module: string, method: string): boole
 export function getModuleFromPath(pathname: string): string | null {
   if (pathname.startsWith("/api/auth")) return "users"; // auth is like user access
   if (pathname.startsWith("/api/patients")) return "patients";
+  if (pathname.startsWith("/api/doctors/change-requests")) return "doctor_requests";
   if (pathname.startsWith("/api/doctors")) return "doctors";
   if (pathname.startsWith("/api/appointments")) return "appointments";
   if (pathname.startsWith("/api/consultations")) return "consultations";

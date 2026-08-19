@@ -125,6 +125,18 @@ const strings: Record<string, Record<Language, string>> = {
     en: "Sorry, {doctor_name} has no available slots on {date}. Would you like to try a different date or another doctor?",
     ur: "{doctor_name} ke {date} ko koi slot nahi. Koi aur date ya doctor?",
   },
+  book_doctor_unconfigured: {
+    en: "Dr. {doctor_name} does not have a configured schedule. Please select another doctor.",
+    ur: "Dr. {doctor_name} ka schedule abhi configured nahi hai. Baraye meherbani koi aur doctor muntakhib karein.",
+  },
+  book_no_schedule_on_day: {
+    en: "Dr. {doctor_name} is not scheduled to work on {date}. Please choose another date or doctor.",
+    ur: "Dr. {doctor_name} {date} ko available nahi hain. Baraye meherbani koi aur date ya doctor muntakhib karein.",
+  },
+  book_fully_booked: {
+    en: "Dr. {doctor_name} is fully booked on {date}. Please choose another date or doctor.",
+    ur: "Dr. {doctor_name} {date} ko mukammal booked hain. Baraye meherbani koi aur date ya doctor muntakhib karein.",
+  },
   book_no_doctor: {
     en: "I couldn't find a doctor matching '{query}'. Our available doctors are:\n\n{doctor_list}\n\nPlease try again.",
     ur: "'{query}' se match koi doctor nahi mila. Doctors:\n\n{doctor_list}\n\nDobara try karein.",

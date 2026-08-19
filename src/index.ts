@@ -7,7 +7,7 @@ import { join, extname } from "path";
 import { allowPublicRequest, safeErrorLog } from "./security";
 
 // Route handlers
-import { handleAuthLogin, handleAuthLogout, handleAuthMe } from "./routes/auth";
+import { handleAuthLogin, handleAuthLogout, handleAuthMe, handleResetPasswordRequest, handleResetPasswordVerify } from "./routes/auth";
 import { handlePatients } from "./routes/patients";
 import { handleDoctors } from "./routes/doctors";
 import { handleAppointments } from "./routes/appointments";
@@ -24,6 +24,8 @@ import { handleAudit } from "./routes/audit";
 // Whitelist of endpoints that don't require authentication
 const PUBLIC_ENDPOINTS = [
   { method: "POST", path: "/api/auth/login" },
+  { method: "POST", path: "/api/auth/reset-password/request" },
+  { method: "POST", path: "/api/auth/reset-password/verify" },
   { method: "GET", path: "/api/receptionist" },  // all receptionist endpoints are public
   { method: "POST", path: "/api/receptionist" }, // all receptionist endpoints are public
   { method: "GET", path: "/api/twilio" },  // twilio endpoints are public
@@ -174,6 +176,12 @@ export async function handleRequest(request: Request): Promise<Response> {
   }
   if (pathname === "/api/auth/me" && request.method === "GET") {
     return handleAuthMe(request);
+  }
+  if (pathname === "/api/auth/reset-password/request" && request.method === "POST") {
+    return handleResetPasswordRequest(request);
+  }
+  if (pathname === "/api/auth/reset-password/verify" && request.method === "POST") {
+    return handleResetPasswordVerify(request);
   }
 
   // Patients

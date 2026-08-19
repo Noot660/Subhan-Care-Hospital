@@ -76,9 +76,18 @@ async function handleTwilioGather(request: Request): Promise<Response> {
   const langParam = url.searchParams.get('lang') || 'en';
   const lang: Language = langParam === 'ur' ? 'ur' : 'en';
 
-  const call = activeCalls.get(callSid);
-  const sessionId = call?.sessionId || '';
-  const actions = call?.actions || [];
+  let call = activeCalls.get(callSid);
+  if (!call) {
+    call = {
+      sessionId: '',
+      language: lang,
+      actions: [],
+      turnCount: 0,
+    };
+    activeCalls.set(callSid, call);
+  }
+  const sessionId = call.sessionId;
+  const actions = call.actions;
 
   let formData: URLSearchParams;
   try {

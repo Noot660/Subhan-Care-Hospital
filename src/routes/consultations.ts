@@ -9,6 +9,57 @@ function getUserId(request: Request): number | null {
   return session ? session.user_id : null;
 }
 
+function getConsultationPrintableMetadata(consultation: any, patient: any, doctor: any, prescriptionItems: any[]) {
+  return {
+    header: {
+      clinic_name: "Subhan Care Hospital",
+      document_type: "Consultation Report & Prescription",
+      consultation_id: consultation.id,
+      date: consultation.created_at,
+    },
+    patient: {
+      code: patient.patient_id,
+      name: patient.full_name,
+      dob: patient.dob,
+      gender: patient.gender,
+    },
+    doctor: {
+      name: doctor.name,
+      specialization: doctor.specialization,
+      qualification: doctor.qualification,
+    },
+    vitals: typeof consultation.vitals === 'string' ? JSON.parse(consultation.vitals) : consultation.vitals,
+    clinical: {
+      diagnosis: consultation.diagnosis,
+      notes: consultation.notes,
+    },
+    prescription: prescriptionItems.map(item => ({
+      medicine_name: item.medicine_name,
+      dosage: item.dosage,
+      frequency: item.frequency,
+      duration: item.duration,
+      instructions: item.instructions
+    })),
+    formatted_text: `
+========================================
+         SUBHAN CARE HOSPITAL          
+========================================
+Consultation ID: ${consultation.id}
+Date: ${consultation.created_at}
+Doctor: ${doctor.name} (${doctor.specialization})
+Patient: ${patient.full_name} (${patient.gender}, DOB: ${patient.dob})
+----------------------------------------
+Diagnosis: ${consultation.diagnosis}
+Notes: ${consultation.notes}
+Vitals: ${typeof consultation.vitals === 'string' ? consultation.vitals : JSON.stringify(consultation.vitals)}
+----------------------------------------
+PRESCRIPTION:
+${prescriptionItems.map(item => `- ${item.medicine_name}: ${item.dosage}, ${item.frequency} for ${item.duration}. (${item.instructions})`).join('\n')}
+========================================
+`.trim()
+  };
+}
+
 // GET /api/consultations?patient_id=&doctor_id=&limit=
 async function handleListConsultations(request: Request): Promise<Response> {
   const url = new URL(request.url);
@@ -35,7 +86,13 @@ async function handleListConsultations(request: Request): Promise<Response> {
     if (row.prescription_id) {
       items = db.query("SELECT * FROM prescription_items WHERE prescription_id = ?").all(row.prescription_id as number);
     }
-    return { ...row, prescription_items: items };
+    const patient = db.query("SELECT * FROM patients WHERE id = ?").get(row.patient_id as number);
+    const doctor = db.query("SELECT * FROM doctors WHERE id = ?").get(row.doctor_id as number);
+    return {
+      ...row,
+      prescription_items: items,
+      printable_metadata: getConsultationPrintableMetadata(row, patient, doctor, items)
+    };
   });
   return json(result);
 }
@@ -107,7 +164,13 @@ export async function handleConsultations(request: Request): Promise<Response> {
     ).get(Number(idMatch.id)) as Record<string, unknown> | undefined;
     if (!row) return error("Consultation not found", 404);
     const items = db.query("SELECT * FROM prescription_items WHERE prescription_id IN (SELECT id FROM prescriptions WHERE consultation_id = ?)").all(Number(idMatch.id));
-    return json({ ...row, prescription_items: items });
+    const patient = db.query("SELECT * FROM patients WHERE id = ?").get(row.patient_id as number);
+    const doctor = db.query("SELECT * FROM doctors WHERE id = ?").get(row.doctor_id as number);
+    return json({
+      ...row,
+      prescription_items: items,
+      printable_metadata: getConsultationPrintableMetadata(row, patient, doctor, items)
+    });
   }
   if (pathname === "/api/consultations" && request.method === "GET") return handleListConsultations(request);
   if (pathname === "/api/consultations" && request.method === "POST") return handleCreateConsultation(request);

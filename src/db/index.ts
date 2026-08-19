@@ -195,6 +195,15 @@ function initSchema(database: Database): void {
       FOREIGN KEY (invoice_id) REFERENCES invoices(id)
     );
 
+    CREATE TABLE IF NOT EXISTS credit_notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      invoice_id INTEGER NOT NULL,
+      amount REAL NOT NULL,
+      reason TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+    );
+
     CREATE TABLE IF NOT EXISTS audit_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
@@ -225,6 +234,41 @@ function initSchema(database: Database): void {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS patient_demographic_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      patient_id INTEGER NOT NULL,
+      changed_by INTEGER NOT NULL,
+      field_name TEXT NOT NULL,
+      old_value TEXT,
+      new_value TEXT,
+      changed_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
+      FOREIGN KEY (changed_by) REFERENCES staff(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS doctor_change_requests (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      doctor_id INTEGER NOT NULL,
+      requested_by INTEGER NOT NULL,
+      requested_data TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected')),
+      rejection_reason TEXT,
+      resolved_by INTEGER,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (doctor_id) REFERENCES doctors(id),
+      FOREIGN KEY (requested_by) REFERENCES staff(id),
+      FOREIGN KEY (resolved_by) REFERENCES staff(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS otp_tokens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT NOT NULL,
+      token TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      used INTEGER DEFAULT 0
+    );
   `);
 
   // Only one PENDING request per phone — idempotent callback submissions.
@@ -243,6 +287,12 @@ function initSchema(database: Database): void {
   const appointmentCols = database.query("PRAGMA table_info(appointments)").all() as Array<{ name: string }>;
   if (!appointmentCols.some((c) => c.name === "source")) {
     database.exec("ALTER TABLE appointments ADD COLUMN source TEXT NOT NULL DEFAULT 'staff'");
+  }
+
+  // M2: sessions.last_active_at column migration
+  const sessionCols = database.query("PRAGMA table_info(sessions)").all() as Array<{ name: string }>;
+  if (!sessionCols.some((c) => c.name === "last_active_at")) {
+    database.exec("ALTER TABLE sessions ADD COLUMN last_active_at TEXT NOT NULL DEFAULT '2026-08-19T00:00:00.000Z'");
   }
 }
 

@@ -162,6 +162,29 @@ export interface Session {
   name: string;
   created_at: string;
   expires_at: string;
+  last_active_at?: string;
+}
+
+export interface PatientDemographicHistory {
+  id: number;
+  patient_id: number;
+  changed_by: number;
+  field_name: string;
+  old_value: string | null;
+  new_value: string | null;
+  changed_at: string;
+}
+
+export interface DoctorChangeRequest {
+  id: number;
+  doctor_id: number;
+  requested_by: number;
+  requested_data: string;
+  status: string;
+  rejection_reason: string | null;
+  resolved_by: number | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export type Role = 'admin' | 'doctor' | 'receptionist' | 'pharmacist' | 'billing' | 'management';
