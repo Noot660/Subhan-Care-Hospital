@@ -6,6 +6,10 @@
 
 set -euo pipefail
 
+curl() {
+  curl.exe "$@" || return $?
+}
+
 BASE="http://localhost:3000"
 PASS=0
 FAIL=0

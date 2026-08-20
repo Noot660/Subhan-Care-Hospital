@@ -23,7 +23,7 @@ import type { Patient, Doctor, DoctorSchedule, Appointment } from '../types';
 import { MAX_TURNS, sensitiveVerifier, SENSITIVE_OPERATION_MESSAGE } from '../security';
 import { availableSlots as getAvailableSlots, validateAppointmentInput, validateCalendarDate, hospitalToday } from '../appointments/validation';
 import { detectRedFlag } from './safety';
-import { classifyIntent, isHandoffRequest } from './llm';
+import { classifyIntent, isHandoffRequest, runGeminiAgent, hasLLMFallback } from './llm';
 import { getHandoffConfig, hoursSlaText } from '../handoff/config';
 import {
   isValidPhone as isValidCallbackPhone,
@@ -250,6 +250,18 @@ export async function handleMessage(
       language: lang,
       conversation_active: false,
     };
+  }
+
+  // If LLM fallback is available (OPENAI_API_KEY is present), use the Gemini agent
+  if (hasLLMFallback()) {
+    try {
+      state.language = lang;
+      const agentResponse = await runGeminiAgent(message, state, channel);
+      return agentResponse;
+    } catch (err) {
+      console.warn("Gemini agent failed, falling back to legacy state machine:", err);
+      // Fall through to legacy state-machine flow below
+    }
   }
 
   // If we have an active conversation flow, continue it — unless the caller is

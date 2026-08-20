@@ -1,4 +1,4 @@
-// Chat Widget — AI Receptionist Interface
+// Chat Widget — AI Receptionist Interface (Premium Redesign)
 import { api } from './api.js';
 import { showToast } from './components.js';
 
@@ -20,6 +20,7 @@ const langLabel = document.getElementById('langLabel');
 const speakerToggle = document.getElementById('speakerToggle');
 const speakerIcon = document.getElementById('speakerIcon');
 const quickActions = document.getElementById('quickActions');
+const chatNavTabs = document.getElementById('chatNavTabs');
 
 // ── Initialization ──
 function init() {
@@ -37,11 +38,26 @@ function updateLangUI() {
 }
 
 function updateSpeakerUI() {
+  // Toggle standard icon text for legacy script compatibility
   speakerIcon.textContent = speakerOn ? '🔊' : '🔇';
+  
+  // Visual SVG toggle
+  const onIcon = speakerToggle.querySelector('.speaker-on-icon');
+  const offIcon = speakerToggle.querySelector('.speaker-off-icon');
+  if (onIcon && offIcon) {
+    if (speakerOn) {
+      onIcon.classList.remove('hidden');
+      offIcon.classList.add('hidden');
+    } else {
+      onIcon.classList.add('hidden');
+      offIcon.classList.remove('hidden');
+    }
+  }
 }
 
 function bindEvents() {
   sendButton.addEventListener('click', sendMessage);
+  
   chatInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -49,16 +65,38 @@ function bindEvents() {
     }
   });
 
+  // Enable/disable send button dynamically & clear active tab state
+  chatInput.addEventListener('input', () => {
+    sendButton.disabled = !chatInput.value.trim() || isProcessing;
+    if (chatNavTabs) {
+      chatNavTabs.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+    }
+  });
+
   micButton.addEventListener('click', toggleMic);
   langToggle.addEventListener('click', toggleLang);
   speakerToggle.addEventListener('click', toggleSpeaker);
 
-  // Quick action chips
-  quickActions.querySelectorAll('.chip').forEach(chip => {
-    chip.addEventListener('click', () => {
-      const msg = chip.dataset.msg;
+  // Bind Quick action chips & Navigation tabs
+  const actionElements = [];
+  if (quickActions) {
+    actionElements.push(...quickActions.querySelectorAll('.chip'));
+  }
+  if (chatNavTabs) {
+    actionElements.push(...chatNavTabs.querySelectorAll('.nav-tab'));
+  }
+
+  actionElements.forEach(element => {
+    element.addEventListener('click', () => {
+      const msg = element.dataset.msg;
       if (msg) {
+        // Toggle active visual state if it's a navigation tab
+        if (element.classList.contains('nav-tab')) {
+          chatNavTabs.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+          element.classList.add('active');
+        }
         chatInput.value = msg;
+        sendButton.disabled = false;
         sendMessage();
       }
     });
@@ -70,6 +108,12 @@ function toggleLang() {
   lang = lang === 'en' ? 'ur' : 'en';
   localStorage.setItem('lang', lang);
   updateLangUI();
+  
+  // Reset active tab states
+  if (chatNavTabs) {
+    chatNavTabs.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  }
+  
   // Reset chat for new language
   sessionId = null;
   chatMessages.innerHTML = '';
@@ -94,7 +138,12 @@ function addUserMessage(text) {
   const div = document.createElement('div');
   div.className = 'chat-bubble user';
   div.innerHTML = `
-    <div class="bubble-avatar">👤</div>
+    <div class="bubble-avatar">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="user-avatar-svg" style="width: 18px; height: 18px; color: var(--color-white)">
+        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+        <circle cx="12" cy="7" r="4"/>
+      </svg>
+    </div>
     <div class="bubble-content"><p>${escapeHtml(text)}</p></div>
   `;
   chatMessages.appendChild(div);
@@ -106,7 +155,14 @@ function addBotMessage(text, isMarkdown = true) {
   div.className = 'chat-bubble bot';
   const content = isMarkdown ? formatMarkdown(text) : `<p>${escapeHtml(text)}</p>`;
   div.innerHTML = `
-    <div class="bubble-avatar">🤖</div>
+    <div class="bubble-avatar">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="bot-avatar-svg" style="width: 18px; height: 18px; color: var(--color-teal)">
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+        <line x1="9" y1="9" x2="15" y2="9"/>
+        <line x1="9" y1="13" x2="15" y2="13"/>
+        <line x1="9" y1="17" x2="13" y2="17"/>
+      </svg>
+    </div>
     <div class="bubble-content">${content}</div>
   `;
   chatMessages.appendChild(div);
@@ -123,6 +179,7 @@ function formatMarkdown(text) {
   return `<p>${html}</p>`;
 }
 
+// Simple HTML Escaping
 function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = str;
@@ -141,6 +198,7 @@ function showTyping() {
   scrollToBottom();
 }
 
+// Hide Typing Indicator
 function hideTyping() {
   typingIndicator.classList.add('hidden');
 }
@@ -199,14 +257,13 @@ async function sendMessage() {
     console.error('Chat error:', err);
   } finally {
     isProcessing = false;
-    sendButton.disabled = false;
+    sendButton.disabled = !chatInput.value.trim();
     chatInput.disabled = false;
     chatInput.focus();
   }
 }
 
 function handleAction(action) {
-  // Future: could show inline cards for appointments, etc.
   console.log('Action:', action);
 }
 
@@ -265,6 +322,7 @@ function initSpeechRecognition() {
       transcript += event.results[i][0].transcript;
     }
     chatInput.value = transcript;
+    sendButton.disabled = !transcript.trim();
 
     // Auto-send on final result
     if (event.results[event.results.length - 1].isFinal) {
@@ -308,7 +366,15 @@ function startListening() {
     recognition.start();
     isListening = true;
     micButton.classList.add('listening');
-    micButton.textContent = '⏹';
+    
+    // Toggle SVGs inside mic button
+    const micIcon = micButton.querySelector('.mic-icon');
+    const stopIcon = micButton.querySelector('.stop-icon');
+    if (micIcon && stopIcon) {
+      micIcon.classList.add('hidden');
+      stopIcon.classList.remove('hidden');
+    }
+    
     chatInput.placeholder = lang === 'ur' ? 'Sun raha hoon...' : 'Listening...';
   } catch (err) {
     console.warn('Speech start error:', err);
@@ -321,7 +387,15 @@ function stopListening() {
   }
   isListening = false;
   micButton.classList.remove('listening');
-  micButton.textContent = '🎤';
+  
+  // Toggle SVGs back
+  const micIcon = micButton.querySelector('.mic-icon');
+  const stopIcon = micButton.querySelector('.stop-icon');
+  if (micIcon && stopIcon) {
+    micIcon.classList.remove('hidden');
+    stopIcon.classList.add('hidden');
+  }
+  
   updateLangUI(); // Restore placeholder
 }
 

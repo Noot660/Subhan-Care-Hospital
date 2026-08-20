@@ -12,6 +12,7 @@ export interface ConversationState {
   context: Record<string, unknown>; // extra data like doctor list, slots, etc.
   createdAt: number;
   lastActivity: number;
+  history?: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
 }
 
 // In-memory conversation store
@@ -54,6 +55,7 @@ export function getOrCreateSession(sessionId?: string | null): ConversationState
     context: {},
     createdAt: Date.now(),
     lastActivity: Date.now(),
+    history: [],
   };
 
   conversations.set(id, state);
