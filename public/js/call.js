@@ -8,7 +8,9 @@ const synth = TTS ? window.speechSynthesis : null;
 // Full voice calling needs BOTH speech recognition (mic input) and speech
 // synthesis (AI replies). If either is missing we degrade to text chat with a
 // friendly inline notice — never an uncaught error.
-// Warn if SpeechRecognition or SpeechSynthesis not supported\nif (!SR) console.warn('[VoiceCall] SpeechRecognition not supported in this browser');\nif (!synth) console.warn('[VoiceCall] SpeechSynthesis not supported in this browser');
+const voiceSupported = !!(SR && synth);
+if (!SR) console.warn('[VoiceCall] SpeechRecognition not supported in this browser');
+if (!synth) console.warn('[VoiceCall] SpeechSynthesis not supported in this browser');
 
 // ── State machine ──
 // idle → listening → thinking → speaking → (ready → ...) → idle
@@ -468,24 +470,9 @@ function stopTimer() { clearInterval(timerInterval); timerInterval = null; }
 // English: prefer Google en-US, then en-US, then any en-*.
 function getVoice() {
   if (!synth) return null;
-  const voices = cachedVoices;
-  if (!voices.length) return null;
-
-  const norm = v => (v.lang || '').toLowerCase().replace('_', '-');
-  const pick = prefixes => {
-    for (const prefix of prefixes) {
-      const group = voices.filter(v => norm(v).startsWith(prefix));
-      if (!group.length) continue;
-      return group.find(v => /google/i.test(v.name)) || group[0];
-    }
-    return null;
-  };
-
-  return lang === 'ur'
   let voices = [];
   try { voices = synth.getVoices() || []; } catch (_) { voices = []; }
   if (!voices.length) return null;
-
   const norm = v => (v.lang || '').toLowerCase().replace('_', '-');
   const pick = (prefixes) => {
     for (const prefix of prefixes) {
@@ -495,7 +482,6 @@ function getVoice() {
     }
     return null;
   };
-
   return lang === 'ur'
     ? pick(['ur-pk', 'ur-in', 'ur'])   // spec order: ur-PK > ur-IN > any ur-*
     : pick(['en-us', 'en-gb', 'en']);
