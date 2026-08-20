@@ -50,8 +50,25 @@ async function handleListAppointments(request: Request): Promise<Response> {
   const date = url.searchParams.get("date") || "";
   const status = url.searchParams.get("status") || "";
   const db = getDb();
+
+  // SRS Section 5: Doctor role sees only their own appointments.
+  const token = extractToken(request);
+  const session = token ? validateSession(token) : null;
+  let scopeDoctorId = 0;
+  if (session && session.role === "doctor") {
+    const staff = db.query("SELECT * FROM staff WHERE id = ?").get(session.user_id) as { phone: string; name: string } | undefined;
+    if (staff) {
+      let doctor = db.query("SELECT id FROM doctors WHERE phone = ?").get(staff.phone) as { id: number } | undefined;
+      if (!doctor) {
+        doctor = db.query("SELECT id FROM doctors WHERE name = ?").get(staff.name) as { id: number } | undefined;
+      }
+      if (doctor) scopeDoctorId = doctor.id;
+    }
+  }
+
   let query = `SELECT a.*, p.full_name as patient_name, p.patient_id as patient_code, d.name as doctor_name, d.specialization as doctor_specialization FROM appointments a JOIN patients p ON a.patient_id = p.id JOIN doctors d ON a.doctor_id = d.id WHERE 1=1`;
   const params: (string | number)[] = [];
+  if (scopeDoctorId > 0) { query += " AND a.doctor_id = ?"; params.push(scopeDoctorId); }
   if (patientId) { query += " AND a.patient_id = ?"; params.push(Number(patientId)); }
   if (doctorId) { query += " AND a.doctor_id = ?"; params.push(Number(doctorId)); }
   if (date) { query += " AND a.date = ?"; params.push(date); }

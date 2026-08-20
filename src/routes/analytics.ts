@@ -219,22 +219,35 @@ function handleReport(type: string): Response {
   return json(data);
 }
 
-// GET /api/analytics/reports/:type/export
+// GET /api/analytics/reports/:type/export?format=csv|pdf|excel
 function handleReportExport(type: string, format: string): Response {
-  if (format !== 'csv') {
-    return error('Only CSV format is currently supported for export', 400);
+  const validFormats = ['csv', 'pdf', 'excel'];
+  if (!validFormats.includes(format)) {
+    return error(`Unsupported format. Must be one of: ${validFormats.join(', ')}`, 400);
   }
   const data = queryReportData(type);
   if (data.length === 0) {
+    const mimeTypes: Record<string, string> = {
+      csv: 'text/csv', pdf: 'application/pdf', excel: 'application/vnd.ms-excel',
+    };
+    const exts: Record<string, string> = { csv: 'csv', pdf: 'pdf', excel: 'xls' };
     return new Response('', {
       headers: {
-        'Content-Type': 'text/csv',
-        'Content-Disposition': `attachment; filename="${type}_report.csv"`,
+        'Content-Type': mimeTypes[format],
+        'Content-Disposition': `attachment; filename="${type}_report.${exts[format]}`,
+        'Cache-Control': 'no-cache',
       }
     });
   }
 
   const headers = Object.keys(data[0]);
+
+  if (format === 'csv') return buildCsvExport(data, headers, type);
+  if (format === 'excel') return buildExcelExport(data, headers, type);
+  return buildPdfExport(data, headers, type);
+}
+
+function buildCsvExport(data: any[], headers: string[], type: string): Response {
   const rows = [headers.join(",")];
   for (const item of data) {
     const values = headers.map(header => {
@@ -245,12 +258,132 @@ function handleReportExport(type: string, format: string): Response {
     });
     rows.push(values.join(","));
   }
-  const csvContent = rows.join("\r\n");
-
-  return new Response(csvContent, {
+  return new Response(rows.join("\r\n"), {
     headers: {
       'Content-Type': 'text/csv',
       'Content-Disposition': `attachment; filename="${type}_report.csv"`,
+      'Cache-Control': 'no-cache',
+    }
+  });
+}
+
+function escapeHtmlEntities(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function buildExcelExport(data: any[], headers: string[], type: string): Response {
+  const title = type.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  let html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">';
+  html += '<head><meta http-equiv="Content-Type" content="text/html; charset=utf-8"><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>' + escapeHtmlEntities(title) + '</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--></head>';
+  html += '<body><table border="1"><thead><tr>';
+  for (const h of headers) {
+    html += `<th style="background:#0d9488;color:white;font-weight:bold;padding:6px;">${escapeHtmlEntities(h)}</th>`;
+  }
+  html += '</tr></thead><tbody>';
+  for (const item of data) {
+    html += '<tr>';
+    for (const h of headers) {
+      const val = item[h];
+      const valStr = val === null || val === undefined ? "" : String(val);
+      html += `<td style="padding:4px;mso-number-format:\\@;">${escapeHtmlEntities(valStr)}</td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table></body></html>';
+  return new Response(html, {
+    headers: {
+      'Content-Type': 'application/vnd.ms-excel; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${type}_report.xls"`,
+      'Cache-Control': 'no-cache',
+    }
+  });
+}
+
+function escapePdfString(text: string): string {
+  return text.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+}
+
+function truncatePdfCell(text: string, colWidth: number): string {
+  const maxChars = Math.floor(colWidth / 5);
+  if (text.length <= maxChars) return text;
+  return text.slice(0, Math.max(0, maxChars - 1)) + '...';
+}
+
+function buildPdfExport(data: any[], headers: string[], type: string): Response {
+  const title = type.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  const colCount = headers.length;
+  const pageWidth = 595;
+  const pageHeight = 842;
+  const margin = 40;
+  const tableWidth = pageWidth - 2 * margin;
+  const colWidth = Math.floor(tableWidth / colCount);
+  const rowHeight = 18;
+  const titleHeight = 30;
+  const headerRowHeight = 22;
+  const rowsPerPage = Math.max(1, Math.floor((pageHeight - 2 * margin - titleHeight - headerRowHeight) / rowHeight));
+  const totalPages = Math.max(1, Math.ceil(data.length / rowsPerPage));
+
+  const objects: string[] = [];
+  let objNum = 4;
+  const pageRefs: number[] = [];
+
+  for (let pageNum = 0; pageNum < totalPages; pageNum++) {
+    const startIdx = pageNum * rowsPerPage;
+    const endIdx = Math.min(startIdx + rowsPerPage, data.length);
+    let content = '';
+    content += `BT /F1 16 Tf ${margin} ${pageHeight - margin - 16} Td (${escapePdfString(title)}) Tj ET\n`;
+    content += `BT /F2 9 Tf ${margin} ${pageHeight - margin - 30} Td (Generated: ${escapePdfString(new Date().toISOString().slice(0, 10))}) Tj ET\n`;
+    let y = pageHeight - margin - titleHeight - 10;
+    content += `${margin} ${y - headerRowHeight + 4} ${tableWidth} ${headerRowHeight} re 0.05 0.58 0.53 rg f\n`;
+    content += 'BT /F2 9 Tf 1 0 0 1 ' + margin + ' ' + (y - 14) + ' Tm ';
+    for (let c = 0; c < colCount; c++) {
+      content += `(${escapePdfString(truncatePdfCell(headers[c], colWidth))}) Tj ${colWidth} 0 Td `;
+    }
+    content += 'ET\n';
+    y -= headerRowHeight;
+    for (let i = startIdx; i < endIdx; i++) {
+      const item = data[i];
+      if ((i - startIdx) % 2 === 1) {
+        content += `${margin} ${y - rowHeight + 2} ${tableWidth} ${rowHeight} re 0.93 0.95 0.96 rg f\n`;
+      }
+      content += 'BT /F2 8 Tf 1 0 0 1 ' + margin + ' ' + (y - 12) + ' Tm ';
+      for (let c = 0; c < colCount; c++) {
+        const val = item[headers[c]];
+        const valStr = val === null || val === undefined ? '' : String(val);
+        content += `(${escapePdfString(truncatePdfCell(valStr, colWidth))}) Tj ${colWidth} 0 Td `;
+      }
+      content += 'ET\n';
+      y -= rowHeight;
+    }
+    const contentObjNum = objNum++;
+    objects.push(`${contentObjNum} 0 obj\n<< /Length ${content.length} >>\nstream\n${content}\nendstream\nendobj`);
+    const pageObjNum = objNum++;
+    pageRefs.push(pageObjNum);
+    objects.push(`${pageObjNum} 0 obj\n<< /Type /Page /Parent 1 0 R /MediaBox [0 0 ${pageWidth} ${pageHeight}] /Contents ${contentObjNum} 0 R /Resources << /Font << /F1 2 0 R /F2 3 0 R >> >> >>\nendobj`);
+  }
+
+  const pagesObj = `1 0 obj\n<< /Type /Pages /Kids [${pageRefs.map(r => r + ' 0 R').join(' ')}] /Count ${totalPages} >>\nendobj`;
+  const font1Obj = `2 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj`;
+  const font2Obj = `3 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj`;
+
+  let pdf = '%PDF-1.4\n';
+  const offsets: number[] = [];
+  offsets.push(pdf.length); pdf += pagesObj + '\n';
+  offsets.push(pdf.length); pdf += font1Obj + '\n';
+  offsets.push(pdf.length); pdf += font2Obj + '\n';
+  for (const obj of objects) { offsets.push(pdf.length); pdf += obj + '\n'; }
+  const catalogObjNum = objNum++;
+  offsets.push(pdf.length);
+  pdf += `${catalogObjNum} 0 obj\n<< /Type /Catalog /Pages 1 0 R >>\nendobj\n`;
+  const xrefOffset = pdf.length;
+  pdf += `xref\n0 ${offsets.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) { pdf += String(offset).padStart(10, '0') + ' 00000 n \n'; }
+  pdf += `trailer\n<< /Size ${offsets.length + 1} /Root ${catalogObjNum} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+
+  return new Response(pdf, {
+    headers: {
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="${type}_report.pdf"`,
       'Cache-Control': 'no-cache',
     }
   });

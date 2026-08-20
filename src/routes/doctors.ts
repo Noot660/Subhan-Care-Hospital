@@ -37,8 +37,18 @@ async function handleListDoctors(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const specialization = url.searchParams.get("specialization") || "";
   const db = getDb();
+
+  // SRS Section 5: Doctor role sees only their own profile ("R (own)").
+  const token = extractToken(request);
+  const session = token ? validateSession(token) : null;
+  let scopeDoctorId = 0;
+  if (session && session.role === "doctor") {
+    scopeDoctorId = resolveDoctorFromSession(db, session) ?? 0;
+  }
+
   let query = "SELECT * FROM doctors WHERE status = 'active'";
   const params: string[] = [];
+  if (scopeDoctorId > 0) { query += " AND id = ?"; params.push(String(scopeDoctorId)); }
   if (specialization) { query += " AND specialization LIKE ?"; params.push(`%${specialization}%`); }
   query += " ORDER BY name";
   const doctors = db.query(query).all(...params) as Doctor[];
@@ -51,6 +61,18 @@ async function handleListDoctors(request: Request): Promise<Response> {
 
 async function handleGetDoctor(request: Request, id: string): Promise<Response> {
   const db = getDb();
+
+  // SRS Section 5: Doctor role can only view their own profile ("R (own)").
+  const token = extractToken(request);
+  const session = token ? validateSession(token) : null;
+  if (session && session.role === "doctor") {
+    const requestedId = /^\d+$/.test(id) ? Number(id) : 0;
+    const ownId = resolveDoctorFromSession(db, session) ?? 0;
+    if (ownId > 0 && requestedId !== ownId) {
+      return error("Forbidden — you can only view your own profile", 403);
+    }
+  }
+
   const isNumeric = /^\d+$/.test(id);
   const doctor = isNumeric ? (db.query("SELECT * FROM doctors WHERE id = ?").get(Number(id)) as Doctor | undefined) : null;
   if (!doctor) return error("Doctor not found", 404);
