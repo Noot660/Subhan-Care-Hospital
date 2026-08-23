@@ -1168,13 +1168,13 @@ async function renderConsultationsView() {
         esc(c.doctor_name || '—'),
         formatDate(c.appointment_date) + (c.start_time ? ` · ${esc(c.start_time)}` : ''),
         esc(c.diagnosis || '—'),
-        esc(c.notes || '—'),
         statusBadge(c.prescription_status || '—'),
+        `<button class="btn btn-outline btn-sm print-rx-btn" data-id="${c.id}">Print Rx</button>`,
       ],
     }));
     const table = document.createElement('div');
     table.className = 'table-wrap';
-    table.appendChild(createTable(['Patient', 'Doctor', 'Date', 'Diagnosis', 'Notes', 'Prescription'], rows));
+    table.appendChild(createTable(['Patient', 'Doctor', 'Date', 'Diagnosis', 'Prescription', 'Action'], rows));
     listEl.appendChild(table);
   };
 
@@ -1191,6 +1191,12 @@ async function renderConsultationsView() {
       } catch (err2) { showToast(err2.message, 'error'); }
     }));
   }
+
+  document.getElementById('conList').addEventListener('click', (e) => {
+    const btn = e.target.closest('.print-rx-btn');
+    if (btn) printPrescription(btn.dataset.id);
+  });
+
   document.getElementById('conSearch').addEventListener('input', debounce((e) => renderList(e.target.value.trim()), 250));
 }
 
@@ -1487,9 +1493,13 @@ async function renderBillingView() {
         formatDate(inv.created_at),
         formatRs(inv.total),
         statusBadge(inv.status),
-        (inv.status === 'paid' || inv.status === 'cancelled')
-          ? '—'
-          : `<button class="btn btn-success btn-sm pay-btn" data-id="${inv.id}" data-amt="${inv.total}">Record Payment</button>`,
+        `<div class="flex gap-2">
+          ${(inv.status === 'paid' || inv.status === 'cancelled')
+            ? ''
+            : `<button class="btn btn-success btn-sm pay-btn" data-id="${inv.id}" data-amt="${inv.total}">Pay</button>`
+          }
+          <button class="btn btn-outline btn-sm print-inv-btn" data-id="${inv.id}">Print</button>
+        </div>`,
       ],
     }));
     const table = document.createElement('div');
@@ -1499,6 +1509,13 @@ async function renderBillingView() {
 
     listEl.addEventListener('click', async (e) => {
       const btn = e.target.closest('.pay-btn');
+      const printBtn = e.target.closest('.print-inv-btn');
+      
+      if (printBtn) {
+        printInvoice(printBtn.dataset.id);
+        return;
+      }
+      
       if (!btn) return;
       const amt = await promptModal('Record Payment', `Enter payment amount (max ${formatRs(btn.dataset.amt)}):`, btn.dataset.amt, { min: 1 });
       if (!amt || isNaN(amt) || Number(amt) <= 0) return;
@@ -2043,7 +2060,13 @@ async function renderDoctorHistory() {
         </div>
         ${consultations.length ? consultations.map(c => `
           <div class="card" style="margin-bottom:10px">
-            <div class="card-header"><h4>${formatDate(c.appointment_date)} · ${esc(c.start_time || '')}</h4>${statusBadge(c.prescription_status || '—')}</div>
+            <div class="card-header">
+              <h4>${formatDate(c.appointment_date)} · ${esc(c.start_time || '')}</h4>
+              <div class="flex gap-2 items-center">
+                ${statusBadge(c.prescription_status || '—')}
+                <button class="btn btn-outline btn-sm print-rx-btn" data-id="${c.id}">Print Rx</button>
+              </div>
+            </div>
             <div class="card-body">
               <p style="margin-bottom:6px"><strong>Diagnosis:</strong> ${esc(c.diagnosis)}</p>
               ${c.notes ? `<p class="text-muted" style="font-size:0.84rem;margin-bottom:6px">${esc(c.notes)}</p>` : ''}
@@ -2052,6 +2075,11 @@ async function renderDoctorHistory() {
             </div>
           </div>`).join('') : emptyState('📋', 'No consultation history', 'This patient has no recorded consultations yet.')}
       `;
+
+      listEl.addEventListener('click', (e) => {
+        const btn = e.target.closest('.print-rx-btn');
+        if (btn) printPrescription(btn.dataset.id);
+      });
     } catch (err) { listEl.innerHTML = emptyState('⚠️', 'Search failed', err.message); }
   }, 300);
   document.getElementById('histSearch').addEventListener('input', doSearch);
@@ -2218,9 +2246,13 @@ async function renderBillingInvoices() {
         formatDate(inv.created_at),
         formatRs(inv.total),
         statusBadge(inv.status),
-        (inv.status === 'paid' || inv.status === 'cancelled')
-          ? '—'
-          : `<button class="btn btn-success btn-sm pay-btn" data-id="${inv.id}" data-amt="${inv.total}">Record Payment</button>`,
+        `<div class="flex gap-2">
+          ${(inv.status === 'paid' || inv.status === 'cancelled')
+            ? ''
+            : `<button class="btn btn-success btn-sm pay-btn" data-id="${inv.id}" data-amt="${inv.total}">Pay</button>`
+          }
+          <button class="btn btn-outline btn-sm print-inv-btn" data-id="${inv.id}">Print</button>
+        </div>`,
       ],
     }));
     const table = document.createElement('div');
@@ -2239,6 +2271,13 @@ async function renderBillingInvoices() {
 
   document.getElementById('invList').addEventListener('click', async (e) => {
     const btn = e.target.closest('.pay-btn');
+    const printBtn = e.target.closest('.print-inv-btn');
+    
+    if (printBtn) {
+      printInvoice(printBtn.dataset.id);
+      return;
+    }
+    
     if (!btn) return;
     const amt = await promptModal('Record Payment', `Enter payment amount (max ${formatRs(btn.dataset.amt)}):`, btn.dataset.amt, { min: 1 });
     if (!amt || isNaN(amt) || Number(amt) <= 0) return;
@@ -2327,6 +2366,265 @@ async function renderAuditView() {
     const p=document.getElementById('auditPages'); p.innerHTML=`<button class="btn btn-outline btn-sm" ${data.pagination.page<=1?'disabled':''} id="auditPrev">Previous</button> <span class="text-muted">Page ${data.pagination.page} of ${Math.max(1,data.pagination.pages)} · ${data.pagination.total} events</span> <button class="btn btn-outline btn-sm" ${data.pagination.page>=data.pagination.pages?'disabled':''} id="auditNext">Next</button>`; document.getElementById('auditPrev').onclick=()=>{if(page>1){page--;load();}};document.getElementById('auditNext').onclick=()=>{if(page<data.pagination.pages){page++;load();}};
   }; document.getElementById('auditApply').onclick=()=>{page=1;load();}; await load();
 }
+
+// ═══════════════════════════════════════════════════════════
+// PRINT UTILITIES (Invoices & Prescriptions)
+// ═══════════════════════════════════════════════════════════
+window.printInvoice = async function(id) {
+  try {
+    const inv = await api.getInvoice(id);
+    const meta = inv.printable_metadata;
+    if (!meta) throw new Error("No printable metadata available for this invoice");
+
+    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    if (!printWindow) {
+      showToast("Pop-up blocked. Please allow pop-ups for this site.", "error");
+      return;
+    }
+
+    const itemsHtml = meta.items.map(item => `
+      <tr>
+        <td>${esc(item.description)}</td>
+        <td>${esc(item.type)}</td>
+        <td style="text-align: center;">${item.quantity}</td>
+        <td style="text-align: right;">Rs. ${item.unit_price.toFixed(2)}</td>
+        <td style="text-align: right;">Rs. ${item.total.toFixed(2)}</td>
+      </tr>
+    `).join('');
+
+    const html = `
+      <html>
+      <head>
+        <title>Invoice Receipt - ${meta.header.invoice_number}</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #333; margin: 20px; line-height: 1.4; }
+          .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
+          .header h1 { margin: 0; font-size: 24px; text-transform: uppercase; letter-spacing: 1px; }
+          .header p { margin: 5px 0 0; font-size: 14px; color: #666; }
+          .meta-info { display: flex; justify-content: space-between; margin-bottom: 20px; }
+          .meta-info div { font-size: 14px; }
+          .patient-box { border: 1px solid #ccc; padding: 12px; border-radius: 8px; margin-bottom: 20px; background-color: #f9f9f9; }
+          .patient-box h3 { margin: 0 0 8px; font-size: 16px; border-bottom: 1px dashed #ccc; padding-bottom: 4px; }
+          .patient-box p { margin: 4px 0; font-size: 14px; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+          th { border-bottom: 2px solid #333; padding: 8px; text-align: left; font-size: 14px; }
+          td { border-bottom: 1px solid #ddd; padding: 8px; font-size: 14px; }
+          .summary-box { display: flex; flex-direction: column; align-items: flex-end; margin-top: 20px; }
+          .summary-row { display: flex; justify-content: space-between; width: 250px; padding: 4px 0; font-size: 14px; }
+          .summary-row.total { font-weight: bold; border-top: 1px solid #333; border-bottom: 2px double #333; padding: 6px 0; font-size: 16px; }
+          .footer { text-align: center; margin-top: 40px; font-size: 12px; color: #777; border-top: 1px solid #eee; padding-top: 10px; }
+          @media print {
+            body { margin: 0; }
+            .no-print { display: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>${esc(meta.header.clinic_name)}</h1>
+          <p>Samanabad, Lahore · Contact: 0300-0000001</p>
+          <p><strong>${esc(meta.header.receipt_type)}</strong></p>
+        </div>
+        <div class="meta-info">
+          <div>
+            <strong>Invoice Number:</strong> ${esc(meta.header.invoice_number)}<br>
+            <strong>Date:</strong> ${formatDate(meta.header.created_at)}
+          </div>
+          <div style="text-align: right;">
+            <strong>Status:</strong> ${meta.summary.balance_due === 0 ? 'PAID' : 'PARTIALLY PAID / UNPAID'}
+          </div>
+        </div>
+        <div class="patient-box">
+          <h3>Patient Information</h3>
+          <p><strong>Name:</strong> ${esc(meta.patient.name)}</p>
+          <p><strong>Patient ID:</strong> ${esc(meta.patient.code)} · <strong>CNIC:</strong> ${esc(meta.patient.cnic || '—')} · <strong>Phone:</strong> ${esc(meta.patient.phone)}</p>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Description</th>
+              <th>Type</th>
+              <th style="text-align: center;">Qty</th>
+              <th style="text-align: right;">Unit Price</th>
+              <th style="text-align: right;">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsHtml}
+          </tbody>
+        </table>
+        <div class="summary-box">
+          <div class="summary-row">
+            <span>Subtotal:</span>
+            <span>Rs. ${meta.summary.subtotal.toFixed(2)}</span>
+          </div>
+          <div class="summary-row total">
+            <span>Total Amount:</span>
+            <span>Rs. ${meta.summary.total.toFixed(2)}</span>
+          </div>
+          <div class="summary-row">
+            <span>Total Paid:</span>
+            <span>Rs. ${meta.summary.total_paid.toFixed(2)}</span>
+          </div>
+          ${meta.summary.total_credited > 0 ? `
+          <div class="summary-row">
+            <span>Total Credited:</span>
+            <span>Rs. ${meta.summary.total_credited.toFixed(2)}</span>
+          </div>` : ''}
+          <div class="summary-row" style="font-weight: bold; color: ${meta.summary.balance_due > 0 ? '#b91c1c' : '#047857'}">
+            <span>Balance Due:</span>
+            <span>Rs. ${meta.summary.balance_due.toFixed(2)}</span>
+          </div>
+        </div>
+        <div class="footer">
+          Thank you for choosing Subhan Care Hospital.<br>
+          This is a computer-generated receipt and does not require a physical signature.
+        </div>
+        <script>
+          window.onload = function() {
+            window.print();
+            setTimeout(function() { window.close(); }, 500);
+          };
+        </script>
+      </body>
+      </html>
+    `;
+    printWindow.document.write(html);
+    printWindow.document.close();
+  } catch (err) {
+    showToast("Print failed — " + err.message, "error");
+  }
+};
+
+window.printPrescription = async function(id) {
+  try {
+    const cons = await api.getConsultation(id);
+    const meta = cons.printable_metadata;
+    if (!meta) throw new Error("No printable metadata available for this consultation");
+
+    const printWindow = window.open('', '_blank', 'width=800,height=600');
+    if (!printWindow) {
+      showToast("Pop-up blocked. Please allow pop-ups for this site.", "error");
+      return;
+    }
+
+    const rxHtml = meta.prescription.map(item => `
+      <tr>
+        <td style="font-weight: bold;">${esc(item.medicine_name)}</td>
+        <td>${esc(item.dosage)}</td>
+        <td>${esc(item.frequency)}</td>
+        <td>${esc(item.duration)}</td>
+        <td>${esc(item.instructions || 'As directed')}</td>
+      </tr>
+    `).join('');
+
+    const html = `
+      <html>
+      <head>
+        <title>Prescription - Consultation #${meta.header.consultation_id}</title>
+        <style>
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #333; margin: 20px; line-height: 1.4; }
+          .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 20px; }
+          .header h1 { margin: 0; font-size: 24px; text-transform: uppercase; letter-spacing: 1px; }
+          .header p { margin: 5px 0 0; font-size: 14px; color: #666; }
+          .document-title { text-align: center; font-size: 16px; font-weight: bold; margin: 10px 0; text-transform: uppercase; border: 1px solid #333; padding: 4px; display: inline-block; width: 100%; box-sizing: border-box; }
+          .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
+          .info-block { border: 1px solid #ccc; padding: 10px; border-radius: 8px; }
+          .info-block h3 { margin: 0 0 6px; font-size: 14px; border-bottom: 1px dashed #ccc; padding-bottom: 4px; }
+          .info-block p { margin: 4px 0; font-size: 13px; }
+          .vitals-row { display: flex; gap: 15px; margin-bottom: 20px; border: 1px solid #ddd; padding: 10px; border-radius: 8px; background-color: #fafafa; font-size: 13px; }
+          .vitals-row span { margin-right: 15px; }
+          .clinical-notes { border: 1px solid #ddd; padding: 12px; border-radius: 8px; margin-bottom: 20px; }
+          .clinical-notes h3 { margin: 0 0 8px; font-size: 15px; }
+          .clinical-notes p { margin: 4px 0; font-size: 13px; }
+          .rx-title { font-size: 18px; font-weight: bold; color: #1e3a8a; margin: 20px 0 10px; border-bottom: 2px solid #1e3a8a; padding-bottom: 4px; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 40px; }
+          th { border-bottom: 2px solid #333; padding: 8px; text-align: left; font-size: 13px; background-color: #f3f4f6; }
+          td { border-bottom: 1px solid #ddd; padding: 8px; font-size: 13px; }
+          .signatures { display: flex; justify-content: space-between; margin-top: 60px; padding: 0 20px; }
+          .sig-line { width: 200px; border-top: 1px solid #333; text-align: center; padding-top: 5px; font-size: 13px; }
+          .footer { text-align: center; margin-top: 40px; font-size: 11px; color: #777; border-top: 1px solid #eee; padding-top: 10px; }
+          @media print {
+            body { margin: 0; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>${esc(meta.header.clinic_name)}</h1>
+          <p>Samanabad, Lahore · Contact: 0300-0000001</p>
+        </div>
+        <div class="document-title">${esc(meta.header.document_type)}</div>
+        <div class="info-grid">
+          <div class="info-block">
+            <h3>Doctor Information</h3>
+            <p><strong>Name:</strong> ${esc(meta.doctor.name)}</p>
+            <p><strong>Specialization:</strong> ${esc(meta.doctor.specialization)}</p>
+            <p><strong>Qualification:</strong> ${esc(meta.doctor.qualification)}</p>
+          </div>
+          <div class="info-block">
+            <h3>Patient Information</h3>
+            <p><strong>Name:</strong> ${esc(meta.patient.name)}</p>
+            <p><strong>Patient ID:</strong> ${esc(meta.patient.code)}</p>
+            <p><strong>DOB:</strong> ${formatDate(meta.patient.dob)} · <strong>Gender:</strong> ${esc(meta.patient.gender)}</p>
+          </div>
+        </div>
+        
+        <div class="vitals-row">
+          <strong>Vitals:</strong>
+          <span><strong>BP:</strong> ${esc(meta.vitals?.bp || '—')}</span>
+          <span><strong>Temp:</strong> ${esc(meta.vitals?.temp || '—')}</span>
+          <span><strong>Pulse:</strong> ${esc(meta.vitals?.pulse || '—')}</span>
+          <span><strong>Weight:</strong> ${esc(meta.vitals?.weight || '—')}</span>
+        </div>
+
+        <div class="clinical-notes">
+          <h3>Diagnosis & Clinical Notes</h3>
+          <p><strong>Diagnosis:</strong> ${esc(meta.clinical.diagnosis || '—')}</p>
+          <p><strong>Notes:</strong> ${esc(meta.clinical.notes || '—')}</p>
+        </div>
+
+        <div class="rx-title">Rx (Prescription)</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Medicine Name</th>
+              <th>Dosage</th>
+              <th>Frequency</th>
+              <th>Duration</th>
+              <th>Instructions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rxHtml || '<tr><td colspan="5" style="text-align:center;">No medicines prescribed</td></tr>'}
+          </tbody>
+        </table>
+
+        <div class="signatures">
+          <div class="sig-line">Patient's Signature</div>
+          <div class="sig-line">Doctor's Signature & Stamp</div>
+        </div>
+
+        <div class="footer">
+          This prescription is valid for 7 days from the date of issue.<br>
+          Thank you for choosing Subhan Care Hospital.
+        </div>
+        <script>
+          window.onload = function() {
+            window.print();
+            setTimeout(function() { window.close(); }, 500);
+          };
+        </script>
+      </body>
+      </html>
+    `;
+    printWindow.document.write(html);
+    printWindow.document.close();
+  } catch (err) {
+    showToast("Print failed — " + err.message, "error");
+  }
+};
+
 // ═══════════════════════════════════════════════════════════
 // BOOT
 // ═══════════════════════════════════════════════════════════

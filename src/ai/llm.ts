@@ -1,3 +1,26 @@
+import { readFileSync, existsSync } from 'fs';
+import { join } from 'path';
+
+// Force load .env file to override global environment variables in sandbox/terminal
+const envPath = join(process.cwd(), '.env');
+if (existsSync(envPath)) {
+  try {
+    const envContent = readFileSync(envPath, 'utf-8');
+    for (const line of envContent.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const parts = trimmed.split('=');
+      if (parts.length >= 2) {
+        const key = parts[0].trim();
+        const value = parts.slice(1).join('=').trim();
+        process.env[key] = value;
+      }
+    }
+  } catch (err) {
+    console.error("Failed to parse .env file:", err);
+  }
+}
+
 import type { Language } from './i18n';
 import { getDb } from '../db';
 import { availableSlots as getAvailableSlots, validateAppointmentInput, validateCalendarDate, hospitalToday } from '../appointments/validation';
@@ -339,6 +362,9 @@ export async function classifyWithLLM(text: string): Promise<ClassifiedIntent> {
   }
 
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -368,7 +394,9 @@ Respond with JSON: {"intent": "...", "confidence": 0.0-1.0, "entities": {}}`,
         temperature: 0,
         max_tokens: 200,
       }),
+      signal: controller.signal
     });
+    clearTimeout(timeoutId);
 
     const data = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
     const content = data.choices?.[0]?.message?.content;
@@ -380,7 +408,7 @@ Respond with JSON: {"intent": "...", "confidence": 0.0-1.0, "entities": {}}`,
         entities: { ...extractEntities(text), ...parsed.entities },
       };
     }
-  } catch {
+  } catch (err) {
     // Fall back to local classifier
   }
 
@@ -684,20 +712,29 @@ export async function runGeminiAgent(
       { role: 'system', content: 'CRITICAL REMINDER: You must output ONLY a valid JSON object matching the schema. Do NOT write any conversational text or markdown code blocks outside the JSON.' }
     ];
 
-    const response = await fetch(`${baseUrl}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: model,
-        messages: messages,
-        max_tokens: 1000,
-        temperature: 0.1,
-        response_format: { type: 'json_object' }
-      })
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+    let response;
+    try {
+      response = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: messages,
+          max_tokens: 1000,
+          temperature: 0.1,
+          response_format: { type: 'json_object' }
+        }),
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
       const errBody = await response.text();

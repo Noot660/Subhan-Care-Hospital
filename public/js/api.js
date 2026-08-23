@@ -157,6 +157,10 @@ export const api = {
     return request(`/api/billing/invoices${qs ? '?' + qs : ''}`);
   },
 
+  getInvoice(id) {
+    return request(`/api/billing/invoices/${id}`);
+  },
+
   createInvoice(data) {
     return request('/api/billing/invoices', {
       method: 'POST',
@@ -184,6 +188,10 @@ export const api = {
   listConsultations(params = {}) {
     const qs = new URLSearchParams(params).toString();
     return request(`/api/consultations${qs ? '?' + qs : ''}`);
+  },
+
+  getConsultation(id) {
+    return request(`/api/consultations/${id}`);
   },
 
   createConsultation(data) {

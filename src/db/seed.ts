@@ -8,12 +8,33 @@ async function seed() {
 
   // Ensure clean slate: delete the DB file so autoincrement counters reset
   const dbPath = join(import.meta.dir, "..", "..", "data", "hms.db");
+  let db;
   if (existsSync(dbPath)) {
-    unlinkSync(dbPath);
-    console.log("🗑️  Removed existing database file");
+    try {
+      unlinkSync(dbPath);
+      console.log("🗑️  Removed existing database file");
+      db = getDb();
+    } catch (e) {
+      console.warn("⚠️  Database file is busy/locked. Falling back to clearing table contents...");
+      db = getDb();
+      db.exec("PRAGMA foreign_keys = OFF");
+      const tables = [
+        "patients", "doctors", "doctor_schedules", "staff", "sessions",
+        "appointments", "consultations", "prescriptions", "prescription_items",
+        "medicines", "stock_movements", "invoices", "invoice_items", "payments",
+        "credit_notes", "audit_logs", "ai_events", "callback_requests",
+        "patient_demographic_history", "doctor_change_requests", "otp_tokens", "procedures"
+      ];
+      for (const table of tables) {
+        db.run(`DELETE FROM ${table}`);
+      }
+      db.run("DELETE FROM sqlite_sequence");
+      db.exec("PRAGMA foreign_keys = ON");
+      console.log("🧹 Cleared all existing data from tables and reset auto-increment counters");
+    }
+  } else {
+    db = getDb();
   }
-
-  const db = getDb();
 
   // ── 1. Staff (Admin, Receptionist, Pharmacist, Billing) ──
   const adminHash = await hashPassword("admin123");
