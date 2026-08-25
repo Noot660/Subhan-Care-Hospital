@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+#
+# site-up — ONE command to bring the Subhan Care HMS live site back after a FULL
+# sandbox replacement.
+#
+# A full replacement kills every process (watchdog AND supervisor) and, because PID 1
+# is platform-managed (/entrypoint.sh) with no systemd/cron/rc.local, nothing inside
+# the sandbox can auto-resurrect it. This is that manual recovery. Run it, wait a few
+# seconds, and the real HMS app is back on :3000 with the full watchdog+supervisor
+# guard re-armed.
+#
+# Usage:  bash site-up
+#
+set -euo pipefail
+
+SITE_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SITE_DIR"
+LOG="$SITE_DIR/watchdog.log"
+HEALTH_URL="http://localhost:3000/api/health"
+EXPECT="HMS API"
+
+# Defensive: stray Neon src/db.ts breaks the real app on import. Move it aside
+# before anything starts; never commit src/db.ts or data/*.db.
+if [ -f "$SITE_DIR/src/db.ts" ]; then
+  mv "$SITE_DIR/src/db.ts" /tmp/src-db.ts.bak 2>/dev/null || true
+  echo "[site-up] moved stray src/db.ts -> /tmp/src-db.ts.bak"
+fi
+
+echo "[site-up] launching supervisor (it spawns the watchdog and re-publishes the real app)..."
+setsid nohup bash "$SITE_DIR/supervisor.sh" </dev/null >> "$LOG" 2>&1 &
+SUP_PID=$!
+echo "[site-up] supervisor launched (pid $SUP_PID)"
+
+# Wait up to ~60s for the site to come back healthy before reporting status.
+echo "[site-up] waiting for /api/health to report the real HMS app..."
+for _ in $(seq 1 60); do
+  if body="$(curl -sf -m 5 "$HEALTH_URL" 2>/dev/null)" && case "$body" in *"$EXPECT"*) true;; *) false;; esac; then
+    echo "[site-up] HEALTH OK - real HMS app is live on port 3000."
+    break
+  fi
+  sleep 1
+done
+
+echo ""
+bash "$SITE_DIR/watchdog.sh" status
