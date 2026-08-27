@@ -211,7 +211,8 @@ function queryReportData(type: string): any[] {
 }
 
 // GET /api/analytics/reports/:type
-function handleReport(type: string): Response {
+// Export so the role-scoped `reports` module (billing/management read-only) can reuse it.
+export function handleReport(type: string): Response {
   const data = queryReportData(type);
   if (data.length === 0 && !['daily-collections', 'doctor-performance', 'inventory-status', 'outstanding-dues', 'provincial-compliance'].includes(type)) {
     return error('Invalid report type', 400);
@@ -220,7 +221,8 @@ function handleReport(type: string): Response {
 }
 
 // GET /api/analytics/reports/:type/export?format=csv|pdf|excel
-function handleReportExport(type: string, format: string): Response {
+// Export so the role-scoped `reports` module can reuse it.
+export function handleReportExport(type: string, format: string): Response {
   const validFormats = ['csv', 'pdf', 'excel'];
   if (!validFormats.includes(format)) {
     return error(`Unsupported format. Must be one of: ${validFormats.join(', ')}`, 400);
