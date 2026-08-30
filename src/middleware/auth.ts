@@ -203,6 +203,15 @@ const RBAC_MATRIX: Record<string, Record<Role, "F" | "R" | "L" | "-">> = {
     billing: "-",
     management: "-",
   },
+  // Appointment reminders (SRS FR-APT-05): config + manual trigger — admin only.
+  reminders: {
+    admin: "F",
+    doctor: "-",
+    receptionist: "-",
+    pharmacist: "-",
+    billing: "-",
+    management: "-",
+  },
   doctor_requests: {
     admin: "F",
     doctor: "F",
@@ -261,5 +270,6 @@ export function getModuleFromPath(pathname: string): string | null {
   if (pathname.startsWith("/api/audit")) return "audit";
   if (pathname.startsWith("/api/analytics")) return "analytics";
   if (pathname.startsWith("/api/callbacks")) return "callbacks";
+  if (pathname.startsWith("/api/reminders")) return "reminders";
   return null;
 }
