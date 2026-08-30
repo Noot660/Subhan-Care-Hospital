@@ -17,6 +17,7 @@ import { handlePharmacy } from "./routes/pharmacy";
 import { handleBilling } from "./routes/billing";
 import { handleConsultations } from "./routes/consultations";
 import { handleAnalytics } from "./routes/analytics";
+import { handleReports } from "./routes/reports";
 import { handleStaff } from "./routes/staff";
 import { handleCallbacks } from "./routes/callbacks";
 import { handleAudit } from "./routes/audit";
@@ -218,6 +219,12 @@ export async function handleRequest(request: Request): Promise<Response> {
   // Analytics + AI operations — RBAC module "analytics" (admin only)
   if (pathname.startsWith("/api/analytics")) {
     return handleAnalytics(request);
+  }
+
+  // Role-scoped Reports catalogue — RBAC module "reports"
+  // (admin=F, billing=R, management=R). Read-only report data + exports.
+  if (pathname.startsWith("/api/reports")) {
+    return handleReports(request);
   }
 
   // Staff management — RBAC module "users" (admin only)

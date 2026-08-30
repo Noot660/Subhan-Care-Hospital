@@ -141,13 +141,16 @@ const navConfig = {
     { id: 'prescriptions', label: 'Prescriptions', icon: 'clipboard', hash: '#/dashboard/pharmacist' },
     { id: 'inventory', label: 'Inventory', icon: 'pill', hash: '#/dashboard/pharmacist/inventory' },
     { id: 'lowstock', label: 'Low Stock', icon: 'alert', hash: '#/dashboard/pharmacist/lowstock' },
+    { id: 'expiry', label: 'Near Expiry', icon: 'activity', hash: '#/dashboard/pharmacist/expiry' },
   ],
   billing: [
     { id: 'invoices', label: 'Invoices', icon: 'receipt', hash: '#/dashboard/billing' },
     { id: 'collections', label: 'Collections', icon: 'activity', hash: '#/dashboard/billing/collections' },
+    { id: 'dues', label: 'Outstanding Dues', icon: 'alert', hash: '#/dashboard/billing/dues' },
   ],
   management: [
     { id: 'overview', label: 'Overview', icon: 'grid', hash: '#/dashboard/management' },
+    { id: 'reports', label: 'Reports', icon: 'chart', hash: '#/dashboard/management/reports' },
   ],
 };
 
@@ -173,9 +176,12 @@ const navTitles = {
   'pharmacist:prescriptions': ['Prescriptions', 'Pharmacy / Prescriptions'],
   'pharmacist:inventory': ['Medicine Inventory', 'Pharmacy / Inventory'],
   'pharmacist:lowstock': ['Low Stock Alerts', 'Pharmacy / Low Stock'],
+  'pharmacist:expiry': ['Near Expiry Alerts', 'Pharmacy / Near Expiry'],
   'billing:invoices': ['Invoices', 'Billing / Invoices'],
   'billing:collections': ['Collections', 'Billing / Collections'],
+  'billing:dues': ['Outstanding Dues', 'Billing / Dues'],
   'management:overview': ['Dashboard Overview', 'Management / Overview'],
+  'management:reports': ['Reports', 'Management / Reports'],
 };
 
 // ── Sidebar & bottom tabs ──
@@ -203,9 +209,12 @@ function sectionKey(hash, role) {
     : (role === 'doctor') ? 'appointments'
     : (role === 'pharmacist' && section === 'inventory') ? 'inventory'
     : (role === 'pharmacist' && section === 'lowstock') ? 'lowstock'
+    : (role === 'pharmacist' && section === 'expiry') ? 'expiry'
     : (role === 'pharmacist') ? 'prescriptions'
     : (role === 'billing' && section === 'collections') ? 'collections'
+    : (role === 'billing' && section === 'dues') ? 'dues'
     : (role === 'billing') ? 'invoices'
+    : (role === 'management' && section === 'reports') ? 'reports'
     : 'overview';
   return `${role}:${id}`;
 }
@@ -304,13 +313,16 @@ const renderers = {
     prescriptions: renderPharmacistPrescriptions,
     inventory: renderPharmacistInventory,
     lowstock: renderPharmacistLowStock,
+    expiry: renderPharmacistExpiry,
   },
   billing: {
     invoices: renderBillingInvoices,
     collections: renderBillingCollections,
+    dues: renderBillingDues,
   },
   management: {
     overview: renderAdminOverview,
+    reports: renderManagementReports,
   },
 };
 
@@ -350,7 +362,12 @@ async function renderWithTransition(renderer) {
   try {
     await renderer();
   } catch (err) {
-    content.innerHTML = emptyState('⚠️', 'Something went wrong', err.message || 'Failed to load this section.');
+    const msg = err && err.message ? String(err.message) : '';
+    if (/forbidden|insufficient permissions|403/i.test(msg)) {
+      content.innerHTML = emptyState('🔒', 'Permission Denied', 'Your role does not have access to this data. Contact an administrator if you believe this is a mistake.');
+    } else {
+      content.innerHTML = emptyState('⚠️', 'Something went wrong', msg || 'Failed to load this section.');
+    }
   }
   content.classList.remove('section-enter');
 }
@@ -2624,6 +2641,204 @@ window.printPrescription = async function(id) {
     showToast("Print failed — " + err.message, "error");
   }
 };
+
+
+// ═══════════════════════════════════════════════════════════
+// PHARMACIST: Near Expiry (uses /api/pharmacy/alerts)
+// ═══════════════════════════════════════════════════════════
+async function renderPharmacistExpiry() {
+  content.innerHTML = `
+    <div class="section-head">
+      <div><h3>Near Expiry</h3><div class="sub">Medicines expiring within their alert window</div></div>
+    </div>
+    <div id="expList">${skeletonTable(5)}</div>
+  `;
+  const load = async () => {
+    const listEl = document.getElementById('expList');
+    listEl.innerHTML = skeletonTable(5);
+    try {
+      const alerts = await cached('pharm:alerts', () => api.pharmacyAlerts());
+      const items = alerts.near_expiry || [];
+      listEl.innerHTML = '';
+      if (!items.length) {
+        listEl.innerHTML = emptyState('✅', 'Nothing expiring soon', 'No medicines are within their expiry alert window.');
+        return;
+      }
+      listEl.innerHTML = `<div class="table-wrap"><table class="data-table">
+        <thead><tr><th>Medicine</th><th>Batch</th><th>Stock</th><th>Expiry</th><th>Level</th></tr></thead>
+        <tbody>${items.map(m => `
+          <tr>
+            <td><strong>${esc(m.name)}</strong></td>
+            <td>${esc(m.batch_number)}</td>
+            <td>${m.quantity}</td>
+            <td><span class="badge badge-amber">${esc(m.expiry_date)}</span></td>
+            <td>${m.quantity <= m.reorder_threshold ? '<span class="badge badge-red">low</span>' : '—'}</td>
+          </tr>`).join('')}</tbody></table></div>`;
+    } catch (err) {
+      listEl.innerHTML = '';
+      listEl.appendChild(errorBanner('Could not load expiry alerts — ' + err.message, load));
+    }
+  };
+  await load();
+}
+
+// ═══════════════════════════════════════════════════════════
+// BILLING: Outstanding Dues (uses /api/reports/outstanding-dues)
+// ═══════════════════════════════════════════════════════════
+async function renderBillingDues() {
+  content.innerHTML = `
+    <div class="section-head">
+      <div><h3>Outstanding Dues</h3><div class="sub">Patients with unpaid balances, ranked by amount due</div></div>
+      <div class="toolbar">
+        <button class="btn btn-outline btn-sm" id="duesRefresh">⟳ Refresh</button>
+        <button class="btn btn-outline btn-sm" id="duesCsv">⬇ Export CSV</button>
+      </div>
+    </div>
+    <div id="duesList">${skeletonTable(6)}</div>
+  `;
+  document.getElementById('duesRefresh').addEventListener('click', () => { invalidate('billing:dues'); loadDues(); });
+  document.getElementById('duesCsv').addEventListener('click', () => downloadReport('outstanding-dues', 'csv'));
+
+  async function loadDues() {
+    const listEl = document.getElementById('duesList');
+    listEl.innerHTML = skeletonTable(6);
+    try {
+      const dues = await cached('billing:dues', () => api.reports('outstanding-dues'));
+      listEl.innerHTML = '';
+      if (!dues.length) {
+        listEl.innerHTML = emptyState('✅', 'All settled', 'No outstanding balances right now.');
+        return;
+      }
+      const total = dues.reduce((sum, d) => sum + (Number(d.outstanding_balance) || 0), 0);
+      listEl.innerHTML = `
+        <div class="stats-grid" style="margin-bottom:16px">
+          <div class="stats-card st-amber"><div class="stats-icon" style="background:rgba(245,158,11,0.14);color:#fcd34d">👤</div>
+            <div><span class="stats-value">${dues.length}</span><span class="stats-label">Patients with Dues</span></div></div>
+          <div class="stats-card st-red"><div class="stats-icon" style="background:rgba(239,68,68,0.14);color:#fca5a5">🧾</div>
+            <div><span class="stats-value">${formatRs(total)}</span><span class="stats-label">Total Outstanding</span></div></div>
+        </div>
+        <div class="table-wrap"><table class="data-table">
+          <thead><tr><th>Patient</th><th>Code</th><th>Phone</th><th>Invoiced</th><th>Paid</th><th>Outstanding</th></tr></thead>
+          <tbody>${dues.map(d => `
+            <tr>
+              <td><strong>${esc(d.patient_name)}</strong></td>
+              <td>${esc(d.patient_code)}</td>
+              <td>${esc(d.phone || '—')}</td>
+              <td>${formatRs(d.total_invoiced)}</td>
+              <td>${formatRs(d.total_paid)}</td>
+              <td><span class="badge badge-red">${formatRs(d.outstanding_balance)}</span></td>
+            </tr>`).join('')}</tbody></table></div>`;
+    } catch (err) {
+      listEl.innerHTML = '';
+      listEl.appendChild(errorBanner('Could not load outstanding dues — ' + err.message, loadDues));
+    }
+  }
+  await loadDues();
+}
+
+// ═══════════════════════════════════════════════════════════
+// MANAGEMENT: Reports catalogue (uses /api/reports/*)
+// ═══════════════════════════════════════════════════════════
+const MANAGEMENT_REPORTS = [
+  { type: 'daily-collections', label: 'Daily Collections', desc: 'Payments collected today', icon: '💰' },
+  { type: 'doctor-performance', label: 'Doctor Performance', desc: 'Appointments & revenue by doctor', icon: '👨‍⚕️' },
+  { type: 'inventory-status', label: 'Inventory Status', desc: 'Stock levels & expiry flags', icon: '💊' },
+  { type: 'outstanding-dues', label: 'Outstanding Dues', desc: 'Unpaid balances by patient', icon: '🤝' },
+  { type: 'provincial-compliance', label: 'Provincial Compliance', desc: 'Regulatory visit reporting', icon: '📋' },
+];
+
+async function renderManagementReports() {
+  content.innerHTML = `
+    <div class="section-head">
+      <div><h3>Reports</h3><div class="sub">Operational and regulatory reports (read-only view & export)</div></div>
+    </div>
+    <div id="reportCards">${skeletonCards(5)}</div>
+  `;
+  const wrap = document.getElementById('reportCards');
+
+  const render = (cat) => {
+    wrap.innerHTML = '';
+    const list = cat && Array.isArray(cat.reports) && cat.reports.length ? cat.reports : MANAGEMENT_REPORTS;
+    wrap.innerHTML = list.map(r => {
+      const meta = MANAGEMENT_REPORTS.find(m => m.type === r.type) || { label: r.type || 'Report', desc: r.description || '', icon: '📊' };
+      return `
+        <div class="card" style="margin-bottom:12px">
+          <div class="card-header">
+            <div class="flex items-center gap-2">
+              <div class="user-avatar small" style="background:linear-gradient(135deg,#0f766e,#14b8a6)">${meta.icon}</div>
+              <div><h4>${esc(meta.label)}</h4><small class="text-muted">${esc(r.description || meta.desc)}</small></div>
+            </div>
+            <div class="flex gap-1">
+              <button class="btn btn-outline btn-sm rpt-open" data-type="${esc(r.type)}">View</button>
+              <button class="btn btn-outline btn-sm rpt-csv" data-type="${esc(r.type)}">CSV</button>
+            </div>
+          </div>
+        </div>`;
+    }).join('');
+  };
+
+  wrap.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-type]');
+    if (!btn) return;
+    const type = btn.dataset.type;
+    if (btn.classList.contains('rpt-open')) {
+      try {
+        const data = await api.reports(type);
+        openReportModal(type, data);
+      } catch (err) { showToast(err.message, 'error'); }
+    } else if (btn.classList.contains('rpt-csv')) {
+      downloadReport(type, 'csv');
+    }
+  });
+
+  try {
+    const cat = await api.reportCatalogue().catch(() => null);
+    render(cat);
+  } catch (err) {
+    wrap.innerHTML = '';
+    wrap.appendChild(errorBanner('Could not load reports — ' + err.message, renderManagementReports));
+  }
+}
+
+function openReportModal(type, rows) {
+  if (!rows || !rows.length) { showToast('This report is currently empty', 'info'); return; }
+  const headers = Object.keys(rows[0]).map(h => h.replace(/_/g, ' '));
+  const keys = Object.keys(rows[0]);
+  const body = document.createElement('div');
+  body.className = 'table-wrap';
+  const maxRows = Math.min(rows.length, 50);
+  body.innerHTML = `<table class="data-table"><thead><tr>${headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+    <tbody>${rows.slice(0, maxRows).map(r => `<tr>${keys.map(k => `<td>${esc(String(r[k] ?? ''))}</td>`).join('')}</tr>`).join('')}</tbody></table>
+    ${rows.length > maxRows ? `<p class="text-muted" style="padding:10px">Showing first ${maxRows} of ${rows.length} rows. Use Export for the full report.</p>` : ''}`;
+  createModal('Report: ' + type.replace(/-/g, ' '), body);
+}
+
+async function downloadReport(type, format) {
+  try {
+    const token = sessionStorage.getItem('token');
+    const res = await fetch('/api/reports/' + type + '/export?format=' + format, {
+      headers: token ? { Authorization: 'Bearer ' + token } : {},
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'HTTP ' + res.status);
+    }
+    const blob = await res.blob();
+    const exts = { csv: 'csv', pdf: 'pdf', excel: 'xls' };
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = type + '_report.' + (exts[format] || 'csv');
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast('Report downloaded', 'success');
+  } catch (err) {
+    showToast('Export failed — ' + err.message, 'error');
+  }
+}
+
 
 // ═══════════════════════════════════════════════════════════
 // BOOT

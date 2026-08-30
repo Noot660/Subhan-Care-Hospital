@@ -132,6 +132,11 @@ export const api = {
     return request(`/api/pharmacy/medicines${qs ? '?' + qs : ''}`);
   },
 
+  // Pharmacy stock alerts: { low_stock: [], near_expiry: [] } (pharmacist/admin)
+  pharmacyAlerts() {
+    return request('/api/pharmacy/alerts');
+  },
+
   restockMedicine(id, quantity) {
     return request(`/api/pharmacy/medicines/${id}/restock`, {
       method: 'POST',
@@ -231,6 +236,19 @@ export const api = {
   // Analytics (admin only)
   analyticsOverview(period = '7d') {
     return request(`/api/analytics/overview?period=${period}`);
+  },
+
+  // Role-scoped Reports catalogue (billing/management read, admin full)
+  reports(type) {
+    return request(`/api/reports/${type}`);
+  },
+
+  reportCatalogue() {
+    return request('/api/reports');
+  },
+
+  exportReport(type, format = 'csv') {
+    return request(`/api/reports/${type}/export?format=${format}`);
   },
 
   aiEvents(params = {}) {
