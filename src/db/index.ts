@@ -276,6 +276,16 @@ function initSchema(database: Database): void {
       price REAL NOT NULL,
       status TEXT NOT NULL DEFAULT 'active'
     );
+    CREATE TABLE IF NOT EXISTS appointment_reminders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      appointment_id INTEGER NOT NULL,
+      patient_id INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'sent' CHECK(status IN ('sent', 'failed')),
+      message TEXT NOT NULL,
+      attempt_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE CASCADE,
+      FOREIGN KEY (patient_id) REFERENCES patients(id)
+    );
   `);
 
   // Only one PENDING request per phone — idempotent callback submissions.
@@ -288,6 +298,10 @@ function initSchema(database: Database): void {
 
   // Only active appointments participate in uniqueness; cancelled/no-show slots can be reused.
   database.exec(`CREATE UNIQUE INDEX IF NOT EXISTS appointments_active_slot_unique ON appointments(doctor_id, date, start_time) WHERE status IN ('scheduled', 'checked-in', 'completed')`);
+  // Single reminder per appointment — the unique index is the database-level
+  // guard that backs the application-level check in findDueAppointments().
+  database.exec(`CREATE UNIQUE INDEX IF NOT EXISTS appointment_reminders_appointment_unique ON appointment_reminders(appointment_id)`);
+  database.exec(`CREATE INDEX IF NOT EXISTS appointment_reminders_status_idx ON appointment_reminders(status)`);
 
   // ── Migrations (safe for pre-existing databases) ──
   // M1: appointments.source — added later; existing DBs lack the column.

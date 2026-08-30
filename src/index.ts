@@ -22,6 +22,9 @@ import { handleStaff } from "./routes/staff";
 import { handleCallbacks } from "./routes/callbacks";
 import { handleAudit } from "./routes/audit";
 import { handleBackups } from "./routes/backup";
+import { handleReminders } from "./routes/reminders";
+import { processDueReminders } from "./reminders/reminderService";
+import { DEFAULT_REMINDER_INTERVAL_MINUTES } from "./reminders/reminderService";
 
 // Whitelist of endpoints that don't require authentication
 const PUBLIC_ENDPOINTS = [
@@ -244,6 +247,10 @@ export async function handleRequest(request: Request): Promise<Response> {
   if (pathname.startsWith("/api/callbacks")) {
     return handleCallbacks(request);
   }
+  // Appointment SMS reminders — RBAC module "reminders" (admin only)
+  if (pathname.startsWith("/api/reminders")) {
+    return handleReminders(request);
+  }
 
   // AI Receptionist (public — no auth required)
   if (pathname.startsWith("/api/receptionist")) {
@@ -275,6 +282,30 @@ const server = Bun.serve({
 console.log(`🚀 Subhan Care HMS API running at http://0.0.0.0:${PORT}`);
 console.log(`   Health check: http://0.0.0.0:${PORT}/api/health`);
 
+// Appointment reminder ticker (SRS FR-APT-05): periodically scans for due
+// appointments and sends one SMS each. Degrades gracefully when Twilio is
+// not configured. Interval controlled by REMINDER_INTERVAL_MINUTES.
+function reminderTick(): void {
+  processDueReminders(getDb()).then((s) => {
+    if (s.due > 0 || !s.configured) {
+      console.log(
+        `[reminders] configured=${s.configured} due=${s.due} sent=${s.sent} failed=${s.failed} skipped=${s.skipped}`
+      );
+    }
+  }).catch((e) => {
+    console.error(`[reminders] tick failed: ${e instanceof Error ? e.message : String(e)}`);
+  });
+}
+function startReminderTicker(): void {
+  const raw = process.env.REMINDER_INTERVAL_MINUTES;
+  let minutes = DEFAULT_REMINDER_INTERVAL_MINUTES;
+  if (raw !== undefined && raw !== "" && Number.isFinite(Number(raw)) && Number(raw) > 0) {
+    minutes = Number(raw);
+  }
+  reminderTick();
+  setInterval(reminderTick, minutes * 60 * 1000);
+}
+if (getDb()) startReminderTicker();
 // Graceful shutdown
 process.on("SIGINT", () => {
   console.log("\n🛑 Shutting down...");
